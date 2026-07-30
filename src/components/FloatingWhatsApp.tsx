@@ -104,7 +104,7 @@ export function FloatingWhatsApp() {
       href={isDragging ? undefined : waLink(phone, "Hi! I need help finding a product.")}
       target="_blank"
       rel="noopener noreferrer"
-      aria-label="Chat on WhatsApp"
+      aria-label="Ask Question on WhatsApp"
       style={{
         transform: `translate(${position.x}px, ${position.y}px)`,
         cursor: isDragging ? "grabbing" : "grab",
@@ -112,9 +112,10 @@ export function FloatingWhatsApp() {
       }}
       onMouseDown={handleMouseDown}
       onTouchStart={handleTouchStart}
-      className="fixed bottom-20 right-4 z-40 grid h-14 w-14 place-items-center rounded-full bg-[#25D366] text-white shadow-lg ring-4 ring-[#25D366]/15 select-none"
+      className="fixed bottom-20 right-4 z-40 flex items-center gap-2 rounded-full bg-[#25D366] px-4 py-3 text-white shadow-lg ring-4 ring-[#25D366]/15 select-none hover:bg-[#20ba5a] transition-all"
     >
-      <WhatsAppIcon className="h-7 w-7" />
+      <WhatsAppIcon className="h-5 w-5 shrink-0" />
+      <span className="text-xs font-bold tracking-wide uppercase">Ask Question</span>
     </a>
   );
 }
