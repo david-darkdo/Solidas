@@ -1,7 +1,7 @@
 import { useRef, useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { UploadCloud, Loader2, X, Star, Download, RefreshCw } from "lucide-react";
+import { UploadCloud, Loader2, X, Star, Download, RefreshCw, Crop } from "lucide-react";
 import { deleteCloudinaryImage } from "@/lib/cloudinary";
 
 export function publicImageUrl(path: string | null | undefined): string | null {
@@ -152,6 +152,7 @@ export function ImageUploader({
 export function ImageTile({
   url,
   onDelete,
+  onEdit,
   onSetPrimary,
   onReplace,
   onRegenerate,
@@ -160,6 +161,7 @@ export function ImageTile({
 }: {
   url: string;
   onDelete?: () => void;
+  onEdit?: () => void;
   onSetPrimary?: () => void;
   onReplace?: () => void;
   onRegenerate?: () => void;
@@ -167,10 +169,10 @@ export function ImageTile({
   badge?: string;
 }) {
   return (
-    <div className="relative overflow-hidden rounded-lg border border-border bg-card">
+    <div className="relative overflow-hidden rounded-lg border border-border bg-card shadow-xs group">
       <img src={url} alt="" className="aspect-square w-full object-cover" />
       {badge && (
-        <span className="absolute left-1.5 top-1.5 rounded-full bg-black/60 px-2 py-0.5 text-[10px] uppercase tracking-wider text-white">
+        <span className="absolute left-1.5 top-1.5 rounded-full bg-black/60 px-2 py-0.5 text-[10px] uppercase tracking-wider text-white backdrop-blur">
           {badge}
         </span>
       )}
@@ -179,46 +181,41 @@ export function ImageTile({
           <Star className="h-3 w-3" /> Primary
         </span>
       )}
-      <div className="flex flex-wrap gap-1 border-t border-border bg-background/60 p-1.5">
+      <div className="flex flex-wrap items-center gap-1 border-t border-border bg-card/90 p-1.5 backdrop-blur">
+        {onEdit && (
+          <button
+            type="button"
+            onClick={onEdit}
+            className="inline-flex items-center gap-1 rounded border border-primary/40 bg-primary/10 px-2 py-1 text-[10px] font-bold text-primary hover:bg-primary/20 transition"
+            title="Crop & Rotate Photo"
+          >
+            <Crop className="h-3 w-3" /> Edit Photo
+          </button>
+        )}
         {onSetPrimary && !isPrimary && (
-          <button onClick={onSetPrimary} className="rounded border border-border px-1.5 py-0.5 text-[10px] hover:border-primary">
+          <button type="button" onClick={onSetPrimary} className="rounded border border-border px-1.5 py-1 text-[10px] hover:border-primary">
             <Star className="h-3 w-3" />
           </button>
         )}
         {onReplace && (
-          <button onClick={onReplace} className="rounded border border-border px-1.5 py-0.5 text-[10px] hover:border-primary" title="Replace">
+          <button type="button" onClick={onReplace} className="rounded border border-border px-1.5 py-1 text-[10px] hover:border-primary" title="Replace">
             <RefreshCw className="h-3 w-3" />
           </button>
         )}
-        <a href={url} download target="_blank" rel="noreferrer" className="rounded border border-border px-1.5 py-0.5 text-[10px] hover:border-primary" title="Download">
+        <a href={url} download target="_blank" rel="noreferrer" className="rounded border border-border px-1.5 py-1 text-[10px] hover:border-primary" title="Download">
           <Download className="h-3 w-3" />
         </a>
         {onRegenerate && (
-          <button onClick={onRegenerate} className="rounded border border-primary/40 px-1.5 py-0.5 text-[10px] text-primary hover:bg-primary/10" title="Regenerate">
+          <button type="button" onClick={onRegenerate} className="rounded border border-primary/40 px-1.5 py-1 text-[10px] text-primary hover:bg-primary/10" title="Regenerate">
             <RefreshCw className="h-3 w-3" />
           </button>
         )}
         {onDelete && (
-          <button onClick={onDelete} className="ml-auto rounded border border-destructive/40 px-1.5 py-0.5 text-[10px] text-destructive hover:bg-destructive/10" title="Delete">
+          <button type="button" onClick={onDelete} className="ml-auto rounded border border-destructive/40 px-1.5 py-1 text-[10px] text-destructive hover:bg-destructive/10" title="Delete">
             <X className="h-3 w-3" />
           </button>
         )}
       </div>
     </div>
   );
-}
-
-export async function deleteStorageObject(path: string) {
-  if (!path) return;
-  if (path.startsWith("http://") || path.startsWith("https://")) {
-    try {
-      await deleteCloudinaryImage({ data: { url: path } });
-    } catch (e) {
-      console.error("Failed to delete image from Cloudinary:", e);
-    }
-  } else {
-    // Fallback to legacy Supabase storage removal
-    const BUCKET = "product-images";
-    await supabase.storage.from(BUCKET).remove([path]);
-  }
 }
