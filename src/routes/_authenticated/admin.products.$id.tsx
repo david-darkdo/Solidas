@@ -1,175 +1,184 @@
-import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
-import { useEffect, useState, useMemo } from "react";
-import { useServerFn } from "@tanstack/react-start";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { ArrowLeft, Sparkles, Upload, FileText, Globe, Search, ChevronDown, ChevronUp, Image, Layers, Cpu, ShieldCheck, Check } from "lucide-react";
-import { runProductDetailsEngine } from "@/lib/product-details.functions";
-import { generateStandaloneLifestyleImage } from "@/lib/lifestyle-image.functions";
+import { ArrowLeft, Sparkles, Trash2, Globe, Search, ChevronDown, ChevronUp, Image, Layers, Cpu, ShieldCheck } from "lucide-react";
+import { useServerFn } from "@tanstack/react-start";
 import { runProductPipeline } from "@/lib/ai-pipeline.functions";
+import { generateStandaloneLifestyleImage } from "@/lib/lifestyle-image.functions";
+import { runProductDetailsEngine } from "@/lib/product-details.functions";
 import { ImageUploader, ImageTile, publicImageUrl } from "@/components/ImageUploader";
+import { ImageEditorModal } from "@/components/ImageEditorModal";
 
 export const Route = createFileRoute("/_authenticated/admin/products/$id")({
-  head: () => ({ meta: [{ title: "Edit Product — Admin Panel" }] }),
   component: RebuiltEditProductPage,
 });
-
-type Tax = { id: string; name: string };
-type Cat = Tax & { type_id: string };
-type Sub = Tax & { category_id: string };
-type Fam = Tax & { subcategory_id: string };
 
 function RebuiltEditProductPage() {
   const { id } = Route.useParams();
   const navigate = useNavigate();
-
+  const [product, setProduct] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+
+  // Hierarchy option states
+  const [types, setTypes] = useState<any[]>([]);
+  const [cats, setCats] = useState<any[]>([]);
+  const [subs, setSubs] = useState<any[]>([]);
+  const [fams, setFams] = useState<any[]>([]);
+
+  // AI Pipeline States
   const [generatingDetails, setGeneratingDetails] = useState(false);
   const [generatingLifestyle, setGeneratingLifestyle] = useState(false);
   const [runningPipeline, setRunningPipeline] = useState(false);
-  const [isDirty, setIsDirty] = useState(false);
 
-  // Taxonomy options
-  const [types, setTypes] = useState<Tax[]>([]);
-  const [cats, setCats] = useState<Cat[]>([]);
-  const [subs, setSubs] = useState<Sub[]>([]);
-  const [fams, setFams] = useState<Fam[]>([]);
+  // Photo Editor Modal State
+  const [editingImage, setEditingImage] = useState<{ url: string; target: "image_url" | "generated_installed_image" } | null>(null);
 
-  // Product Record Form State
-  const [p, setP] = useState<any>(null);
-
-  // Section Toggles
+  // Collapsible section toggles (Default Collapsed)
   const [showAdvancedAi, setShowAdvancedAi] = useState(false);
   const [showSeoSection, setShowSeoSection] = useState(false);
   const [showSearchSection, setShowSearchSection] = useState(false);
 
-  const runDetailsFn = useServerFn(runProductDetailsEngine);
-  const generateLifestyleFn = useServerFn(generateStandaloneLifestyleImage);
-  const runPipelineFn = useServerFn(runProductPipeline);
-
-  const load = async () => {
+  const fetchProduct = useCallback(async () => {
     setLoading(true);
-    const [t, c, s, f, prod] = await Promise.all([
+    const [pRes, tRes, cRes, sRes, fRes] = await Promise.all([
+      supabase.from("products").select("*").eq("id", id).maybeSingle(),
       supabase.from("product_types").select("id,name").order("name"),
       supabase.from("categories").select("id,name,type_id").order("name"),
       supabase.from("subcategories").select("id,name,category_id").order("name"),
       supabase.from("family_groups").select("id,name,subcategory_id").order("name"),
-      supabase.from("products").select("*").eq("id", id).single(),
     ]);
 
-    setTypes(t.data ?? []);
-    setCats((c.data ?? []) as any);
-    setSubs((s.data ?? []) as any);
-    setFams((f.data ?? []) as any);
-
-    if (prod.error || !prod.data) {
+    if (pRes.error || !pRes.data) {
       toast.error("Product not found");
       navigate({ to: "/admin/products" });
       return;
     }
 
-    setP(prod.data);
+    setProduct(pRes.data);
+    setTypes(tRes.data || []);
+    setCats(cRes.data || []);
+    setSubs(sRes.data || []);
+    setFams(fRes.data || []);
     setLoading(false);
-  };
+  }, [id, navigate]);
 
   useEffect(() => {
-    load();
-  }, [id]);
+    void fetchProduct();
+  }, [fetchProduct]);
 
-  const filteredCats = useMemo(() => cats.filter((c) => c.type_id === p?.type_id), [cats, p?.type_id]);
-  const filteredSubs = useMemo(() => subs.filter((s) => s.category_id === p?.category_id), [subs, p?.category_id]);
-  const filteredFams = useMemo(() => fams.filter((f) => f.subcategory_id === p?.subcategory_id), [fams, p?.subcategory_id]);
+  const p = product || {};
 
-  const setField = (key: string, val: any) => {
-    setP((prev: any) => {
-      const next = { ...prev, [key]: val };
-      // CRITICAL SYNC RULE: Product Description = SEO Description
-      if (key === "seo_description" || key === "generated_description" || key === "short_description") {
-        next.generated_description = val;
+  const setField = (field: string, val: any) => {
+    setProduct((prev: any) => {
+      const next = { ...prev, [field]: val };
+      // CRITICAL SYNC RULE: Description <-> SEO Description
+      if (field === "description" || field === "short_description") {
+        next.description = val;
+        next.short_description = val;
+        next.seo_description = val;
+      } else if (field === "seo_description") {
+        next.description = val;
         next.short_description = val;
         next.seo_description = val;
       }
       return next;
     });
-    setIsDirty(true);
   };
 
-  // ENGINE 1 Execution
+  const filteredCats = useMemo(() => cats.filter((c) => c.type_id === p.type_id), [cats, p.type_id]);
+  const filteredSubs = useMemo(() => subs.filter((s) => s.category_id === p.category_id), [subs, p.category_id]);
+  const filteredFams = useMemo(() => fams.filter((f) => f.subcategory_id === p.subcategory_id), [fams, p.subcategory_id]);
+
+  const runDetailsFn = useServerFn(runProductDetailsEngine);
+
   const handleGenerateDetails = async () => {
     setGeneratingDetails(true);
     try {
       const res = await runDetailsFn({ data: { productId: id } });
       if (res.ok) {
-        toast.success("Engine 1: Product details & SEO description generated!");
-        await load();
+        toast.success("Engine 1: Product details generated successfully!");
+        await fetchProduct();
       } else {
-        toast.error("Failed to generate product details.");
+        toast.error(res.error || "Failed to generate details");
       }
     } catch (e: any) {
-      toast.error(e.message ?? "Generation failed");
+      toast.error(e.message);
     } finally {
       setGeneratingDetails(false);
     }
   };
 
-  // ENGINE 2 Execution
   const handleGenerateLifestyle = async () => {
     if (!p.image_url) {
-      toast.error("Original product image is required before generating an installed image.");
+      toast.error("Please upload an Original Product Image first.");
       return;
     }
     setGeneratingLifestyle(true);
     try {
-      const res = await generateLifestyleFn({ data: { productId: id } });
-      if (res.ok) {
-        toast.success("Engine 2: Installed lifestyle image generated!");
-        await load();
+      const res = await generateStandaloneLifestyleImage({ data: { productId: id } });
+      if (res.ok && res.imageUrl) {
+        toast.success("Engine 2: Installed lifestyle image generated successfully!");
+        setField("generated_installed_image", res.imageUrl);
+        await fetchProduct();
       } else {
-        toast.error("Failed to generate installed image.");
+        toast.error("Failed to generate installed image");
       }
     } catch (e: any) {
-      toast.error(e.message ?? "Generation failed");
+      toast.error(e.message);
     } finally {
       setGeneratingLifestyle(false);
     }
   };
 
-  // Full Pipeline Execution
   const handleRunFullPipeline = async () => {
     setRunningPipeline(true);
-    try {
-      const res = await runPipelineFn({ data: { productId: id } });
-      if (res.ok) {
-        toast.success("Full AI pipeline completed!");
-        await load();
-      } else {
-        toast.error("Pipeline run failed.");
-      }
-    } catch (e: any) {
-      toast.error(e.message ?? "Pipeline run failed");
-    } finally {
-      setRunningPipeline(false);
+    await handleGenerateDetails();
+    if (p.image_url) {
+      await handleGenerateLifestyle();
     }
+    setRunningPipeline(false);
+    toast.success("Full AI pipeline completed!");
   };
 
-  // SAVE HANDLER
   const save = async () => {
+    if (!p.name?.trim()) return toast.error("Product name is required.");
+    if (!p.image_url) return toast.error("Original product image is required.");
+
     setSaving(true);
-    const syncedDesc = p.seo_description || p.short_description || p.generated_description || null;
+    const finalSyncedDesc = (p.seo_description || p.short_description || p.generated_description || p.description || "").trim();
+
     const payload = {
-      ...p,
-      short_description: syncedDesc,
-      generated_description: syncedDesc,
-      seo_description: syncedDesc,
-      is_published: p.status === "published",
+      type_id: p.type_id || null,
+      category_id: p.category_id || null,
+      subcategory_id: p.subcategory_id || null,
+      family_id: p.family_id || null,
+      name: p.name.trim(),
+      code: p.code ? p.code.trim() : null,
+      production_name: p.production_name ? p.production_name.trim() : null,
+      finish_name: p.finish_name ? p.finish_name.trim() : null,
+      brand: p.brand ? p.brand.trim() : null,
+      color: p.color ? p.color.trim() : null,
+      material: p.material ? p.material.trim() : null,
+      size: p.size ? p.size.trim() : null,
       price: Number(p.price) || 0,
-      processing_state: "completed",
+      image_url: p.image_url,
+      status: p.status || "published",
+      featured_homepage: !!p.featured_homepage,
+      featured_feed: !!p.featured_feed,
+      hidden: !!p.hidden,
+      short_description: finalSyncedDesc,
+      generated_description: finalSyncedDesc,
+      seo_title: p.seo_title ? p.seo_title.trim() : null,
+      seo_description: finalSyncedDesc,
+      seo_keywords: p.seo_keywords || [],
+      canonical_slug: p.canonical_slug ? p.canonical_slug.trim() : null,
+      app_keywords: p.app_keywords || [],
+      app_search_keywords: p.app_keywords || [],
+      generated_installed_image: p.generated_installed_image || null,
+      is_published: p.status === "published",
     };
-    delete payload.id;
-    delete payload.created_at;
-    delete payload.updated_at;
-    delete payload.similar_product_ids;
 
     const { error } = await supabase.from("products").update(payload as any).eq("id", id);
     if (error) {
@@ -181,34 +190,45 @@ function RebuiltEditProductPage() {
     await supabase.rpc("rebuild_search_index" as any, { _product_id: id } as any);
 
     setSaving(false);
-    setIsDirty(false);
-    toast.success("Product changes saved & search index updated!");
-    await load();
+    toast.success("Product saved & search index updated!");
+    navigate({ to: "/admin/products" });
   };
 
-  const arrToStr = (v: any) => (Array.isArray(v) ? v.join(", ") : v ?? "");
-  const strToArr = (v: string) => v.split(",").map((s) => s.trim()).filter(Boolean);
+  const deleteProduct = async () => {
+    if (!confirm("Are you sure you want to delete this product?")) return;
+    const { error } = await supabase.from("products").delete().eq("id", id);
+    if (error) return toast.error(error.message);
+    toast.success("Product deleted");
+    navigate({ to: "/admin/products" });
+  };
 
-  if (loading || !p) {
-    return (
-      <div className="container-app py-12 text-center text-xs text-muted-foreground font-mono">
-        Loading product data for ID: {id}…
-      </div>
-    );
+  if (loading) {
+    return <div className="p-12 text-center text-xs text-muted-foreground">Loading product parameters…</div>;
   }
+
+  const strToArr = (str: string) => (str ? str.split(",").map((s) => s.trim()).filter(Boolean) : []);
+  const arrToStr = (arr: any) => (Array.isArray(arr) ? arr.join(", ") : arr || "");
 
   return (
     <div className="container-app py-6 max-w-5xl space-y-6">
-      {/* Header Navigation & Controls */}
+      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border pb-4">
-        <div>
-          <Link to="/admin/products" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground mb-1">
-            <ArrowLeft className="h-3.5 w-3.5" /> Back to library
+        <div className="flex items-center gap-3">
+          <Link to="/admin/products" className="rounded-full border border-border p-2 hover:bg-muted transition">
+            <ArrowLeft className="h-4 w-4" />
           </Link>
-          <h1 className="font-display text-2xl font-bold tracking-tight text-foreground uppercase">{p.name || "Edit Product"}</h1>
-          <p className="text-xs text-muted-foreground mt-0.5 font-mono">ID: {id} · Code: {p.code}</p>
+          <div>
+            <h1 className="font-display text-2xl font-bold tracking-tight text-foreground uppercase">Edit Product</h1>
+            <p className="text-xs text-muted-foreground font-mono">ID: {id} · {p.code || "No Code"}</p>
+          </div>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={deleteProduct}
+            className="rounded border border-destructive/40 text-destructive px-3 py-2 text-xs font-semibold hover:bg-destructive/10 transition flex items-center gap-1"
+          >
+            <Trash2 className="h-3.5 w-3.5" /> Delete
+          </button>
           <button
             onClick={save}
             disabled={saving}
@@ -232,52 +252,55 @@ function RebuiltEditProductPage() {
             <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Product Type *</label>
             <select
               value={p.type_id || ""}
-              onChange={(e) => setField("type_id", e.target.value)}
+              onChange={(e) => { setField("type_id", e.target.value); setField("category_id", null); setField("subcategory_id", null); setField("family_id", null); }}
               className="mt-1 w-full rounded-md border border-input bg-background p-2 text-xs"
             >
-              <option value="">Select Type…</option>
+              <option value="">Select Type</option>
               {types.map((t) => (
                 <option key={t.id} value={t.id}>{t.name}</option>
               ))}
             </select>
           </div>
+
           <div>
             <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Category *</label>
             <select
               value={p.category_id || ""}
-              onChange={(e) => setField("category_id", e.target.value)}
               disabled={!p.type_id}
+              onChange={(e) => { setField("category_id", e.target.value); setField("subcategory_id", null); setField("family_id", null); }}
               className="mt-1 w-full rounded-md border border-input bg-background p-2 text-xs disabled:opacity-50"
             >
-              <option value="">Select Category…</option>
+              <option value="">Select Category</option>
               {filteredCats.map((c) => (
                 <option key={c.id} value={c.id}>{c.name}</option>
               ))}
             </select>
           </div>
+
           <div>
             <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Subcategory *</label>
             <select
               value={p.subcategory_id || ""}
-              onChange={(e) => setField("subcategory_id", e.target.value)}
               disabled={!p.category_id}
+              onChange={(e) => { setField("subcategory_id", e.target.value); setField("family_id", null); }}
               className="mt-1 w-full rounded-md border border-input bg-background p-2 text-xs disabled:opacity-50"
             >
-              <option value="">Select Subcategory…</option>
+              <option value="">Select Subcategory</option>
               {filteredSubs.map((s) => (
                 <option key={s.id} value={s.id}>{s.name}</option>
               ))}
             </select>
           </div>
+
           <div>
             <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Family Group *</label>
             <select
               value={p.family_id || ""}
-              onChange={(e) => setField("family_id", e.target.value)}
               disabled={!p.subcategory_id}
+              onChange={(e) => setField("family_id", e.target.value)}
               className="mt-1 w-full rounded-md border border-input bg-background p-2 text-xs disabled:opacity-50"
             >
-              <option value="">Select Family…</option>
+              <option value="">Select Family Group</option>
               {filteredFams.map((f) => (
                 <option key={f.id} value={f.id}>{f.name}</option>
               ))}
@@ -285,17 +308,18 @@ function RebuiltEditProductPage() {
           </div>
         </div>
 
-        {/* Essential Fields */}
+        {/* Product Attributes */}
         <div className="grid gap-3 sm:grid-cols-3">
-          <div className="sm:col-span-2">
+          <div>
             <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Product Name *</label>
             <input
               type="text"
               value={p.name || ""}
               onChange={(e) => setField("name", e.target.value)}
-              className="mt-1 w-full rounded-md border border-input bg-background p-2 text-xs"
+              className="mt-1 w-full rounded-md border border-input bg-background p-2 text-xs font-medium"
             />
           </div>
+
           <div>
             <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Product Code</label>
             <input
@@ -303,6 +327,16 @@ function RebuiltEditProductPage() {
               value={p.code || ""}
               onChange={(e) => setField("code", e.target.value)}
               className="mt-1 w-full rounded-md border border-input bg-background p-2 text-xs font-mono"
+            />
+          </div>
+
+          <div>
+            <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Production / Factory Name</label>
+            <input
+              type="text"
+              value={p.production_name || ""}
+              onChange={(e) => setField("production_name", e.target.value)}
+              className="mt-1 w-full rounded-md border border-input bg-background p-2 text-xs"
             />
           </div>
         </div>
@@ -321,7 +355,7 @@ function RebuiltEditProductPage() {
             <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Price (NGN) *</label>
             <input
               type="number"
-              value={p.price ?? 0}
+              value={p.price || 0}
               onChange={(e) => setField("price", e.target.value)}
               className="mt-1 w-full rounded-md border border-input bg-background p-2 text-xs"
             />
@@ -383,7 +417,12 @@ function RebuiltEditProductPage() {
               <span className="text-[10px] text-muted-foreground">Source of Truth</span>
             </div>
             {p.image_url ? (
-              <ImageTile url={publicImageUrl(p.image_url) || p.image_url} onDelete={() => setField("image_url", null)} badge="Original" />
+              <ImageTile
+                url={publicImageUrl(p.image_url) || p.image_url}
+                onDelete={() => setField("image_url", null)}
+                onEdit={() => setEditingImage({ url: publicImageUrl(p.image_url) || p.image_url, target: "image_url" })}
+                badge="Original"
+              />
             ) : (
               <ImageUploader multiple={false} onUploaded={(paths) => setField("image_url", paths[0])} label="Upload Original Product Image" />
             )}
@@ -396,7 +435,12 @@ function RebuiltEditProductPage() {
               <span className="text-[10px] text-muted-foreground">Lifestyle Reference</span>
             </div>
             {p.generated_installed_image ? (
-              <ImageTile url={publicImageUrl(p.generated_installed_image) || p.generated_installed_image} onDelete={() => setField("generated_installed_image", null)} badge="Installed Scene" />
+              <ImageTile
+                url={publicImageUrl(p.generated_installed_image) || p.generated_installed_image}
+                onDelete={() => setField("generated_installed_image", null)}
+                onEdit={() => setEditingImage({ url: publicImageUrl(p.generated_installed_image) || p.generated_installed_image, target: "generated_installed_image" })}
+                badge="Installed Scene"
+              />
             ) : (
               <ImageUploader multiple={false} onUploaded={(paths) => setField("generated_installed_image", paths[0])} label="Upload Installed Image" />
             )}
@@ -424,32 +468,30 @@ function RebuiltEditProductPage() {
 
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={() => setField("status", p.status === "published" ? "draft" : "published")}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition ${p.status === "published" ? "bg-primary" : "bg-muted"}`}
+            <select
+              value={p.status || "published"}
+              onChange={(e) => setField("status", e.target.value)}
+              className="rounded-md border border-input bg-background p-2 text-xs font-semibold"
             >
-              <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition ${p.status === "published" ? "translate-x-6" : "translate-x-1"}`} />
-            </button>
-            <span className="text-xs font-semibold text-foreground">
-              {p.status === "published" ? "Status: Published" : "Status: Draft"}
-            </span>
+              <option value="published">Status: Published</option>
+              <option value="draft">Status: Draft</option>
+              <option value="review">Status: Review</option>
+              <option value="archived">Status: Archived</option>
+            </select>
           </div>
 
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={save}
-              disabled={saving}
-              className="rounded bg-primary px-5 py-2 text-xs font-bold uppercase tracking-wider text-primary-foreground hover:bg-primary/95 transition shadow-sm"
-            >
-              {saving ? "Saving…" : "Save Changes"}
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={save}
+            disabled={saving}
+            className="rounded bg-primary px-5 py-2 text-xs font-bold uppercase tracking-wider text-primary-foreground hover:bg-primary/95 transition shadow-sm"
+          >
+            {saving ? "Saving…" : "Save Changes"}
+          </button>
         </div>
       </section>
 
-      {/* SECTION 4: Advanced AI Operations (Collapsed by default) */}
+      {/* SECTION 4: Advanced AI (Collapsed by default) */}
       <section className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
         <button
           type="button"
@@ -498,14 +540,17 @@ function RebuiltEditProductPage() {
               </button>
             </div>
 
+            {/* AI Status & Log */}
             <div className="rounded-lg border border-border bg-background p-3 text-xs space-y-2 font-mono text-muted-foreground">
               <div className="flex items-center justify-between text-foreground font-semibold">
-                <span>AI Execution Tracking</span>
-                <span className="text-[10px] text-primary uppercase">{p.processing_state || "Completed"}</span>
+                <span>AI State: {p.processing_state || "completed"}</span>
+                <span className="text-[10px] text-primary">{p.last_processed_at ? new Date(p.last_processed_at).toLocaleString() : "Never"}</span>
               </div>
-              <p className="text-[11px] text-muted-foreground">
-                Last processed: {p.last_processed_at ? new Date(p.last_processed_at).toLocaleString() : "Not processed yet"}
-              </p>
+              {p.error_log ? (
+                <p className="text-[11px] text-destructive">{typeof p.error_log === "object" ? JSON.stringify(p.error_log) : p.error_log}</p>
+              ) : (
+                <p className="text-[11px] text-muted-foreground">Product details engine synced. Ready for publishing.</p>
+              )}
             </div>
           </div>
         )}
@@ -594,20 +639,37 @@ function RebuiltEditProductPage() {
           <div className="p-5 border-t border-border space-y-4 bg-muted/10">
             <div>
               <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Search Keywords (App Keywords)</label>
-              <input
-                type="text"
+              <textarea
+                rows={2}
                 value={arrToStr(p.app_keywords || p.app_search_keywords)}
-                onChange={(e) => {
-                  const arr = strToArr(e.target.value);
-                  setField("app_keywords", arr);
-                  setField("app_search_keywords", arr);
-                }}
-                className="mt-1 w-full rounded-md border border-input bg-background p-2 text-xs"
+                onChange={(e) => setField("app_keywords", strToArr(e.target.value))}
+                className="mt-1 w-full rounded-md border border-input bg-background p-2 text-xs font-mono"
               />
             </div>
           </div>
         )}
       </section>
+
+      {/* Image Editor Modal (Crop, Rotate, Flip) */}
+      {editingImage && (
+        <ImageEditorModal
+          isOpen={!!editingImage}
+          imageUrl={editingImage.url}
+          productId={p?.id}
+          onClose={() => setEditingImage(null)}
+          onSave={async (newUrl) => {
+            const targetField = editingImage.target;
+            setField(targetField, newUrl);
+            if (p?.id) {
+              await supabase
+                .from("products")
+                .update({ [targetField]: newUrl } as any)
+                .eq("id", p.id);
+              toast.success("Edited photo permanently saved to product database!");
+            }
+          }}
+        />
+      )}
     </div>
   );
 }
