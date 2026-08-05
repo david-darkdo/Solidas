@@ -38,7 +38,7 @@ function MyCollectionsHistoryPage() {
       setHistoryCollections(cols);
 
       if (cols.length > 0) {
-        const colIds = cols.map((c) => c.id);
+        const colIds = cols.map((c: any) => c.id);
         const { data: rawItems } = await supabase
           .from("collection_items")
           .select("*")

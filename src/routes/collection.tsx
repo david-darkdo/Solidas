@@ -16,6 +16,8 @@ import {
   generateCollectionReference,
   updateCustomerPhoneNumber,
   setGuestCollection,
+  mergeGuestIntoUser,
+  getUserItemRequirements,
   type ItemRequirements,
   type CollectionV2
 } from "@/lib/collection";

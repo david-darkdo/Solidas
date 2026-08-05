@@ -360,4 +360,40 @@ export async function updateCustomerPhoneNumber(userId: string, phone: string) {
   }
 }
 
+export async function getUserCollectionHistory(userId: string): Promise<any[]> {
+  try {
+    const { data: cols } = await supabase
+      .from("collections")
+      .select("*")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false });
+
+    return cols || [];
+  } catch {
+    return [];
+  }
+}
+
+export async function duplicateCollection(userId: string, parentCollectionId: string): Promise<string> {
+  const collection_id = await ensureUserCollection(userId);
+  try {
+    const { data: items } = await supabase
+      .from("collection_items")
+      .select("*")
+      .eq("collection_id", parentCollectionId);
+
+    if (items && items.length > 0) {
+      for (const item of items) {
+        await supabase
+          .from("collection_items")
+          .upsert({ collection_id, product_id: item.product_id }, { onConflict: "collection_id,product_id", ignoreDuplicates: true });
+      }
+    }
+  } catch (err) {
+    console.error("Failed to duplicate collection:", err);
+  }
+  window.dispatchEvent(new Event("collection:change"));
+  return collection_id;
+}
+
 export async function syncOfflineActions() {}
