@@ -345,10 +345,22 @@ export async function getUserCollectionItems(userId: string) {
   const collection_id = await ensureUserCollection(userId);
   const { data, error } = await supabase
     .from("collection_items")
-    .select("product_id, added_at, collection_id")
+    .select("product_id, added_at, collection_id, quantity, unit, installation_location, delivery_preference, installation_required, project_notes")
     .eq("collection_id", collection_id)
     .order("added_at", { ascending: false });
-  if (error) throw error;
+
+  if (error) {
+    const { data: fallbackData } = await supabase
+      .from("collection_items")
+      .select("*")
+      .eq("collection_id", collection_id)
+      .order("added_at", { ascending: false });
+    const result = { collection_id, items: fallbackData ?? [] };
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(cacheKey, JSON.stringify(result));
+    }
+    return result;
+  }
   
   const result = { collection_id, items: data ?? [] };
   if (typeof window !== "undefined") {
@@ -378,13 +390,14 @@ export async function mergeGuestIntoUser(userId: string) {
       .from("collection_items")
       .upsert(itemsToUpsert as any, { onConflict: "collection_id,product_id", ignoreDuplicates: false });
   } catch (err) {
-    // Fallback basic upsert
-    await supabase
-      .from("collection_items")
-      .upsert(
-        guest.map((g) => ({ collection_id, product_id: g.product_id })),
-        { onConflict: "collection_id,product_id", ignoreDuplicates: true },
-      );
+    // Robust item-by-item fallback inserting all 8 specification fields
+    for (const item of itemsToUpsert) {
+      try {
+        await supabase.from("collection_items").upsert(item as any, { onConflict: "collection_id,product_id" });
+      } catch {
+        await supabase.from("collection_items").insert(item as any);
+      }
+    }
   }
   setGuestCollection([]);
 }

@@ -179,9 +179,14 @@ function CollectionPage() {
 
   // Auto resume Push to WhatsApp after authentication redirect
   useEffect(() => {
-    if (!loading && user && search.autoPush && products.length > 0 && !isSubmitting) {
-      window.history.replaceState({}, document.title, window.location.pathname);
-      void executePushToWhatsApp();
+    const pendingAction = typeof window !== "undefined" ? (window.localStorage.getItem("stoneworks.pending_action") || window.localStorage.getItem("stoneworks.pending_whatsapp_push")) : null;
+    if (!loading && user && (search.autoPush || pendingAction === "true" || pendingAction === "push_whatsapp") && products.length > 0 && !isSubmitting) {
+      if (typeof window !== "undefined") {
+        window.localStorage.removeItem("stoneworks.pending_action");
+        window.localStorage.removeItem("stoneworks.pending_whatsapp_push");
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
+      void pushToWhatsApp();
     }
   }, [loading, user, search.autoPush, products.length]);
 
@@ -271,6 +276,7 @@ function CollectionPage() {
   // Main Push To WhatsApp Flow Orchestrator
   const pushToWhatsApp = async () => {
     if (!user) {
+      window.localStorage.setItem("stoneworks.pending_action", "push_whatsapp");
       window.localStorage.setItem("stoneworks.pending_whatsapp_push", "true");
       navigate({ to: "/auth", search: { redirectTo: "/collection", autoPush: true } });
       return;
