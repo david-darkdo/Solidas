@@ -25,9 +25,9 @@ import { MessageCircle, Share2, Trash2, Heart, ChevronDown, ChevronUp, Lock, Ref
 import { publicImageUrl } from "@/components/ImageUploader";
 
 export const Route = createFileRoute("/collection")({
-  validateSearch: (search: Record<string, unknown>) => {
+  validateSearch: (search: Record<string, unknown>): { autoPush?: boolean } => {
     return {
-      autoPush: search.autoPush === "true" || search.autoPush === true,
+      autoPush: search.autoPush === "true" || search.autoPush === true ? true : undefined,
     };
   },
   head: () => ({ meta: [{ title: "My Project Collection — Enreach Concepts" }] }),
@@ -458,7 +458,7 @@ function CollectionPage() {
           </p>
         </div>
         {!user && (
-          <Link to="/auth" search={{ redirectTo: "/collection" }} className="rounded-md border border-primary px-3.5 py-1.5 text-sm font-medium text-primary hover:bg-primary/10 transition">
+          <Link to="/auth" search={{ redirectTo: "/collection", autoPush: false }} className="rounded-md border border-primary px-3.5 py-1.5 text-sm font-medium text-primary hover:bg-primary/10 transition">
             Sign in to Save & Push
           </Link>
         )}
