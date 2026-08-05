@@ -421,20 +421,38 @@ export type Database = {
         Row: {
           added_at: string
           collection_id: string
+          delivery_preference: string | null
           id: string
+          installation_location: string | null
+          installation_required: string | null
           product_id: string
+          project_notes: string | null
+          quantity: number | null
+          unit: string | null
         }
         Insert: {
           added_at?: string
           collection_id: string
+          delivery_preference?: string | null
           id?: string
+          installation_location?: string | null
+          installation_required?: string | null
           product_id: string
+          project_notes?: string | null
+          quantity?: number | null
+          unit?: string | null
         }
         Update: {
           added_at?: string
           collection_id?: string
+          delivery_preference?: string | null
           id?: string
+          installation_location?: string | null
+          installation_required?: string | null
           product_id?: string
+          project_notes?: string | null
+          quantity?: number | null
+          unit?: string | null
         }
         Relationships: [
           {
@@ -460,9 +478,15 @@ export type Database = {
           id: string
           inquiry_status: Database["public"]["Enums"]["inquiry_pipeline_status"]
           internal_notes: string | null
+          is_locked: boolean | null
           name: string
+          parent_collection_id: string | null
+          project_name: string | null
+          status: string | null
+          submitted_at: string | null
           updated_at: string
           user_id: string
+          version: number | null
           whatsapp_sent: boolean
         }
         Insert: {
@@ -471,9 +495,15 @@ export type Database = {
           id?: string
           inquiry_status?: Database["public"]["Enums"]["inquiry_pipeline_status"]
           internal_notes?: string | null
+          is_locked?: boolean | null
           name: string
+          parent_collection_id?: string | null
+          project_name?: string | null
+          status?: string | null
+          submitted_at?: string | null
           updated_at?: string
           user_id: string
+          version?: number | null
           whatsapp_sent?: boolean
         }
         Update: {
@@ -482,9 +512,15 @@ export type Database = {
           id?: string
           inquiry_status?: Database["public"]["Enums"]["inquiry_pipeline_status"]
           internal_notes?: string | null
+          is_locked?: boolean | null
           name?: string
+          parent_collection_id?: string | null
+          project_name?: string | null
+          status?: string | null
+          submitted_at?: string | null
           updated_at?: string
           user_id?: string
+          version?: number | null
           whatsapp_sent?: boolean
         }
         Relationships: []

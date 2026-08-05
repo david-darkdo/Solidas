@@ -2,10 +2,57 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
 const GUEST_KEY = "stoneworks.guest_collection";
+const GUEST_REQ_KEY = "stoneworks.guest_requirements";
 const OFFLINE_ACTIONS_KEY = "stoneworks.offline_actions";
 const CACHED_ITEMS_KEY_PREFIX = "stoneworks.cached_items_";
 
-export type GuestItem = { product_id: string; added_at: string };
+export interface ItemRequirements {
+  quantity?: number;
+  unit?: string;
+  installation_location?: string;
+  delivery_preference?: string;
+  installation_required?: string;
+  project_notes?: string;
+}
+
+export interface CollectionItemV2 {
+  id?: string;
+  collection_id: string;
+  product_id: string;
+  added_at: string;
+  quantity?: number;
+  unit?: string;
+  installation_location?: string;
+  delivery_preference?: string;
+  installation_required?: string;
+  project_notes?: string;
+}
+
+export interface CollectionV2 {
+  id: string;
+  user_id: string;
+  name: string;
+  project_name?: string | null;
+  status: string;
+  is_locked: boolean;
+  parent_collection_id?: string | null;
+  version: number;
+  submitted_at?: string | null;
+  created_at: string;
+  updated_at: string;
+  internal_notes?: string | null;
+}
+
+export type GuestItem = { 
+  product_id: string; 
+  added_at: string;
+  quantity?: number;
+  unit?: string;
+  installation_location?: string;
+  delivery_preference?: string;
+  installation_required?: string;
+  project_notes?: string;
+};
 
 export type OfflineAction = {
   type: "add" | "remove";
@@ -14,10 +61,39 @@ export type OfflineAction = {
   timestamp: string;
 };
 
+/**
+ * Auto unit detection based on product type / category / name.
+ * Default: Tiles, Flooring, Marble, Granite, Decking, Slab -> m²
+ * Default: Doors, Windows, Sanitary Wares, Toilets, Basins, Faucets, Lighting -> Pieces
+ */
+export function detectProductUnit(product: any): "m²" | "Pieces" {
+  if (!product) return "Pieces";
+  const name = String(product.name || "").toLowerCase();
+  const brand = String(product.brand || "").toLowerCase();
+  const desc = String(product.short_description || "").toLowerCase();
+  const text = `${name} ${brand} ${desc}`;
+
+  const sqMKeywords = [
+    "tile", "flooring", "marble", "granite", "decking", "slab", "paving",
+    "stone", "cladding", "terrazzo", "porcelain", "quartz", "paver", "wall tile", "floor tile"
+  ];
+
+  if (sqMKeywords.some((kw) => text.includes(kw))) {
+    return "m²";
+  }
+
+  return "Pieces";
+}
+
 export function getGuestCollection(): GuestItem[] {
   if (typeof window === "undefined") return [];
   try {
-    return JSON.parse(window.localStorage.getItem(GUEST_KEY) || "[]");
+    const rawItems: GuestItem[] = JSON.parse(window.localStorage.getItem(GUEST_KEY) || "[]");
+    const rawReqs: Record<string, ItemRequirements> = JSON.parse(window.localStorage.getItem(GUEST_REQ_KEY) || "{}");
+    return rawItems.map(item => ({
+      ...item,
+      ...(rawReqs[item.product_id] || {})
+    }));
   } catch {
     return [];
   }
@@ -25,8 +101,38 @@ export function getGuestCollection(): GuestItem[] {
 
 export function setGuestCollection(items: GuestItem[]) {
   if (typeof window === "undefined") return;
-  window.localStorage.setItem(GUEST_KEY, JSON.stringify(items));
+  const baseItems = items.map(i => ({ product_id: i.product_id, added_at: i.added_at }));
+  const reqMap: Record<string, ItemRequirements> = {};
+  items.forEach(i => {
+    if (i.quantity || i.installation_location || i.delivery_preference || i.installation_required || i.project_notes) {
+      reqMap[i.product_id] = {
+        quantity: i.quantity,
+        unit: i.unit,
+        installation_location: i.installation_location,
+        delivery_preference: i.delivery_preference,
+        installation_required: i.installation_required,
+        project_notes: i.project_notes
+      };
+    }
+  });
+  window.localStorage.setItem(GUEST_KEY, JSON.stringify(baseItems));
+  window.localStorage.setItem(GUEST_REQ_KEY, JSON.stringify(reqMap));
   window.dispatchEvent(new Event("collection:change"));
+}
+
+export function updateGuestItemRequirements(product_id: string, reqs: ItemRequirements) {
+  if (typeof window === "undefined") return;
+  try {
+    const rawReqs: Record<string, ItemRequirements> = JSON.parse(window.localStorage.getItem(GUEST_REQ_KEY) || "{}");
+    rawReqs[product_id] = {
+      ...(rawReqs[product_id] || {}),
+      ...reqs
+    };
+    window.localStorage.setItem(GUEST_REQ_KEY, JSON.stringify(rawReqs));
+    window.dispatchEvent(new Event("collection:change"));
+  } catch (e) {
+    console.error("Failed updating guest item requirements:", e);
+  }
 }
 
 export function addGuestItem(product_id: string) {
@@ -210,3 +316,150 @@ export async function fetchProductsByIds(ids: string[]) {
   if (error) throw error;
   return data ?? [];
 }
+
+/** Lock collection after Push to WhatsApp submission */
+export async function lockAndSubmitCollection(collectionId: string): Promise<void> {
+  const now = new Date().toISOString();
+  try {
+    const { error } = await supabase
+      .from("collections")
+      .update({
+        status: "Sent",
+        is_locked: true,
+        submitted_at: now,
+        whatsapp_sent: true
+      })
+      .eq("id", collectionId);
+    
+    if (error) {
+      // Fallback update if new DDL columns are not yet in PostgREST schema cache
+      await supabase
+        .from("collections")
+        .update({
+          whatsapp_sent: true,
+          inquiry_status: "SENT" as any
+        })
+        .eq("id", collectionId);
+    }
+  } catch (err) {
+    console.error("Error locking collection:", err);
+  }
+}
+
+/** Create an updated request by duplicating an existing locked collection */
+export async function duplicateCollection(collectionId: string, userId: string): Promise<string> {
+  // 1. Fetch parent collection details
+  const { data: parent } = await supabase
+    .from("collections")
+    .select("*")
+    .eq("id", collectionId)
+    .single();
+
+  const currentVersion = parent?.version || 1;
+  const nextVersion = currentVersion + 1;
+  const newName = parent?.name ? `${parent.name.replace(/ \(v\d+\)$/, "")} (v${nextVersion})` : `My Collection (v${nextVersion})`;
+
+  // 2. Insert duplicated collection with new ID and version
+  let newColId: string | null = null;
+  try {
+    const { data: newCol, error } = await supabase
+      .from("collections")
+      .insert({
+        user_id: userId,
+        name: newName,
+        project_name: parent?.project_name || null,
+        status: "Draft",
+        is_locked: false,
+        parent_collection_id: collectionId,
+        version: nextVersion,
+        inquiry_status: "DRAFT" as any
+      })
+      .select("id")
+      .single();
+
+    if (error) throw error;
+    newColId = newCol.id;
+  } catch (err) {
+    // Fallback if DDL columns not yet cached
+    const { data: newColFallback, error: fbErr } = await supabase
+      .from("collections")
+      .insert({
+        user_id: userId,
+        name: newName
+      })
+      .select("id")
+      .single();
+
+    if (fbErr) throw fbErr;
+    newColId = newColFallback.id;
+  }
+
+  if (!newColId) throw new Error("Failed creating duplicated collection");
+
+  // 3. Fetch items from parent collection
+  const { data: parentItems } = await supabase
+    .from("collection_items")
+    .select("*")
+    .eq("collection_id", collectionId);
+
+  if (parentItems && parentItems.length > 0) {
+    const itemsToInsert = parentItems.map((item: any) => ({
+      collection_id: newColId,
+      product_id: item.product_id,
+      quantity: item.quantity ?? 1,
+      unit: item.unit || null,
+      installation_location: item.installation_location || null,
+      delivery_preference: item.delivery_preference || "Deliver to Site",
+      installation_required: item.installation_required || "Not Sure",
+      project_notes: item.project_notes || null
+    }));
+
+    try {
+      await supabase.from("collection_items").insert(itemsToInsert);
+    } catch {
+      // Fallback basic insert
+      const basicItems = parentItems.map((item: any) => ({
+        collection_id: newColId,
+        product_id: item.product_id
+      }));
+      await supabase.from("collection_items").insert(basicItems);
+    }
+  }
+
+  // Clear guest cache or sync cache if applicable
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event("collection:change"));
+  }
+
+  toast.success(`Created Updated Request (Version ${nextVersion})!`);
+  return newColId;
+}
+
+/** Update individual item requirements (quantity, location, delivery, installation, notes) */
+export async function updateUserItemRequirements(
+  collectionId: string,
+  productId: string,
+  requirements: ItemRequirements
+): Promise<void> {
+  try {
+    const { error } = await supabase
+      .from("collection_items")
+      .update({
+        quantity: requirements.quantity,
+        unit: requirements.unit,
+        installation_location: requirements.installation_location,
+        delivery_preference: requirements.delivery_preference,
+        installation_required: requirements.installation_required,
+        project_notes: requirements.project_notes
+      })
+      .eq("collection_id", collectionId)
+      .eq("product_id", productId);
+
+    if (error) {
+      console.warn("Direct requirement update warning:", error.message);
+    }
+  } catch (err) {
+    console.error("Failed to update item requirements:", err);
+  }
+}
+
