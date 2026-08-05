@@ -20,7 +20,7 @@ import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { FloatingWhatsApp } from "./FloatingWhatsApp";
-import { syncOfflineActions, getUserCollectionItems, getGuestCollection } from "@/lib/collection";
+import { syncOfflineActions, getUserCollectionItems, getGuestCollection, getCachedUserCollectionItems } from "@/lib/collection";
 import { toast } from "sonner";
 import { SiteFooter } from "./SiteFooter";
 
@@ -362,6 +362,8 @@ function BottomNav() {
 
   const loadCollectionCount = useCallback(async () => {
     if (user?.id) {
+      const cached = getCachedUserCollectionItems(user.id);
+      setCollectionCount(cached.items.length); // Instant synchronous update (<16ms)
       try {
         const { items } = await getUserCollectionItems(user.id);
         setCollectionCount(items.length);

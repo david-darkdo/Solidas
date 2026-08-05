@@ -155,11 +155,22 @@ export function updateUserItemRequirements(userId: string, productId: string, re
   }
 }
 
+/** Synchronous local cache reader for instant UI (<16ms) */
+export function getCachedUserCollectionItems(userId: string): { collection_id: string; items: any[] } {
+  if (typeof window === "undefined") return { collection_id: "", items: [] };
+  try {
+    const cacheKey = `${CACHED_ITEMS_KEY_PREFIX}${userId}`;
+    const cached = JSON.parse(window.localStorage.getItem(cacheKey) || '{"items":[]}');
+    return cached;
+  } catch {
+    return { collection_id: "", items: [] };
+  }
+}
+
 /** Guaranteed active collection generator (Schema-Safe against PGRST100) */
 export async function ensureUserCollection(userId: string): Promise<string> {
   if (!userId) return "";
   try {
-    // Select standard columns to prevent PGRST100 errors on missing remote columns
     const { data: existing } = await supabase
       .from("collections")
       .select("id, name, user_id, created_at")
@@ -197,6 +208,7 @@ export async function ensureUserCollection(userId: string): Promise<string> {
 export async function getUserCollectionItems(userId: string) {
   const cacheKey = `${CACHED_ITEMS_KEY_PREFIX}${userId}`;
 
+  // Return cached items synchronously if offline
   if (typeof window !== "undefined" && !navigator.onLine) {
     try {
       const cached = JSON.parse(window.localStorage.getItem(cacheKey) || "null");
@@ -226,60 +238,68 @@ export async function getUserCollectionItems(userId: string) {
 }
 
 export async function addItemToUserCollection(userId: string, product_id: string) {
-  const collection_id = await ensureUserCollection(userId);
-  if (!collection_id) return "";
-
-  try {
-    const { error } = await supabase
-      .from("collection_items")
-      .upsert({ collection_id, product_id }, { onConflict: "collection_id,product_id", ignoreDuplicates: true });
-    
-    if (error) {
-      await supabase.from("collection_items").insert({ collection_id, product_id });
-    }
-  } catch (err) {
-    console.error("Failed to add item to user collection:", err);
-  }
-
   const cacheKey = `${CACHED_ITEMS_KEY_PREFIX}${userId}`;
+  let collection_id = "";
+
+  // 1. Update local cache synchronously FIRST (< 16ms)
   if (typeof window !== "undefined") {
     try {
       const cached = JSON.parse(window.localStorage.getItem(cacheKey) || '{"items":[]}');
+      collection_id = cached.collection_id || "";
       if (!cached.items.some((i: any) => i.product_id === product_id)) {
-        cached.items.push({ product_id, added_at: new Date().toISOString(), collection_id });
+        cached.items.unshift({ product_id, added_at: new Date().toISOString() });
         window.localStorage.setItem(cacheKey, JSON.stringify(cached));
       }
     } catch {}
+    window.dispatchEvent(new Event("collection:change"));
   }
 
-  window.dispatchEvent(new Event("collection:change"));
+  // 2. Background async sync with Supabase
+  try {
+    if (!collection_id) collection_id = await ensureUserCollection(userId);
+    if (collection_id) {
+      const { error } = await supabase
+        .from("collection_items")
+        .upsert({ collection_id, product_id }, { onConflict: "collection_id,product_id", ignoreDuplicates: true });
+      if (error) {
+        await supabase.from("collection_items").insert({ collection_id, product_id });
+      }
+    }
+  } catch (err) {
+    console.error("Background sync error adding item:", err);
+  }
+
   return collection_id;
 }
 
 export async function removeItemFromUserCollection(userId: string, product_id: string) {
-  const collection_id = await ensureUserCollection(userId);
-  if (!collection_id) return;
-
-  try {
-    await supabase
-      .from("collection_items")
-      .delete()
-      .eq("collection_id", collection_id)
-      .eq("product_id", product_id);
-  } catch (err) {
-    console.error("Failed to remove item from user collection:", err);
-  }
-
   const cacheKey = `${CACHED_ITEMS_KEY_PREFIX}${userId}`;
+  let collection_id = "";
+
+  // 1. Update local cache synchronously FIRST (< 16ms)
   if (typeof window !== "undefined") {
     try {
       const cached = JSON.parse(window.localStorage.getItem(cacheKey) || '{"items":[]}');
+      collection_id = cached.collection_id || "";
       cached.items = cached.items.filter((i: any) => i.product_id !== product_id);
       window.localStorage.setItem(cacheKey, JSON.stringify(cached));
     } catch {}
+    window.dispatchEvent(new Event("collection:change"));
   }
 
-  window.dispatchEvent(new Event("collection:change"));
+  // 2. Background async sync with Supabase
+  try {
+    if (!collection_id) collection_id = await ensureUserCollection(userId);
+    if (collection_id) {
+      await supabase
+        .from("collection_items")
+        .delete()
+        .eq("collection_id", collection_id)
+        .eq("product_id", product_id);
+    }
+  } catch (err) {
+    console.error("Background sync error removing item:", err);
+  }
 }
 
 export async function mergeGuestIntoUser(userId: string) {
@@ -327,17 +347,34 @@ export async function fetchProductsByIds(ids: string[]) {
   return data ?? [];
 }
 
-export async function lockAndSubmitCollection(collectionId: string): Promise<string> {
+export async function lockAndSubmitCollection(collectionId: string, userId?: string): Promise<string> {
   const refNum = generateCollectionReference(collectionId);
-  try {
-    await supabase
-      .from("collections")
-      .update({
-        status: "Submitted",
-        updated_at: new Date().toISOString()
-      } as any)
-      .eq("id", collectionId);
-  } catch {}
+
+  // 1. Lock and submit current collection in DB if available
+  if (collectionId) {
+    try {
+      await supabase
+        .from("collections")
+        .update({
+          status: "Submitted",
+          updated_at: new Date().toISOString()
+        } as any)
+        .eq("id", collectionId);
+    } catch {}
+  }
+
+  // 2. Clear local active draft cache & user requirement maps to prepare clean new workspace
+  if (typeof window !== "undefined") {
+    if (userId) {
+      const cacheKey = `${CACHED_ITEMS_KEY_PREFIX}${userId}`;
+      const reqKey = `${USER_REQ_KEY_PREFIX}${userId}`;
+      window.localStorage.removeItem(cacheKey);
+      window.localStorage.removeItem(reqKey);
+    }
+    setGuestCollection([]);
+    window.dispatchEvent(new Event("collection:change"));
+  }
+
   return refNum;
 }
 
