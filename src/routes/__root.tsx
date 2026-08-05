@@ -114,8 +114,8 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { name: "twitter:card", content: "summary_large_image" },
       { name: "twitter:title", content: "Enreach Concepts — Luxury Building Materials Showroom" },
       { name: "twitter:description", content: "A curated catalogue of premium tiles, doors and finishes — built for professional builders." },
-      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/0ba69082-2120-4fe0-8bd9-30559a2bcb96/id-preview-5c7dab40--90df874f-a60f-4339-93a0-e225dd750696.lovable.app-1782681475617.png" },
-      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/0ba69082-2120-4fe0-8bd9-30559a2bcb96/id-preview-5c7dab40--90df874f-a60f-4339-93a0-e225dd750696.lovable.app-1782681475617.png" },
+      { property: "og:image", content: "/logo.png" },
+      { name: "twitter:image", content: "/logo.png" },
     ];
 
     if (googleVerify) {
@@ -142,10 +142,44 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 });
 
 function RootShell({ children }: { children: ReactNode }) {
+  const organizationSchema = {
+    "@context": "https://schema.org",
+    "@type": "Organization",
+    "name": "Enreach Concepts",
+    "url": "https://showroom.enreach.concepts",
+    "logo": "https://showroom.enreach.concepts/logo.png",
+    "description": "Luxury building materials showroom in Abuja specializing in premium tiles, armored security doors, sanitaryware, and architectural finishes.",
+    "address": {
+      "@type": "PostalAddress",
+      "addressLocality": "Abuja",
+      "addressCountry": "NG"
+    }
+  };
+
+  const websiteSchema = {
+    "@context": "https://schema.org",
+    "@type": "WebSite",
+    "name": "Enreach Concepts Digital Showroom",
+    "url": "https://showroom.enreach.concepts",
+    "potentialAction": {
+      "@type": "SearchAction",
+      "target": "https://showroom.enreach.concepts/search?q={search_term_string}",
+      "query-input": "required name=search_term_string"
+    }
+  };
+
   return (
     <html lang="en">
       <head>
         <HeadContent />
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationSchema) }}
+        />
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(websiteSchema) }}
+        />
       </head>
       <body>
         {children}

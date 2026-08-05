@@ -9,6 +9,7 @@ import { runProductDetailsEngine } from "@/lib/product-details.functions";
 import { generateStandaloneLifestyleImage } from "@/lib/lifestyle-image.functions";
 import { ImageUploader, ImageTile, publicImageUrl } from "@/components/ImageUploader";
 import { ImageEditorModal } from "@/components/ImageEditorModal";
+import { triggerSitemapUpdate } from "@/lib/seo-publisher";
 
 export const Route = createFileRoute("/_authenticated/admin/products/new")({
   head: () => ({ meta: [{ title: "Create New Product — Admin Panel" }] }),
@@ -352,12 +353,13 @@ function RebuiltNewProductPage() {
         }] : [])
       ] as any);
 
-      // Rebuild search index
+      // Rebuild search index & trigger SEO discovery sitemap update
       await supabase.rpc("rebuild_search_index" as any, { _product_id: data.id } as any);
+      await triggerSitemapUpdate(data.id);
     }
 
     setSaving(false);
-    toast.success("Product published & search index built!");
+    toast.success("Product published, search index built & sitemaps updated!");
     navigate({ to: "/admin/products" });
   };
 
@@ -403,52 +405,49 @@ function RebuiltNewProductPage() {
               onChange={(e) => { setType(e.target.value); setCat(""); setSub(""); setFam(""); }}
               className="mt-1 w-full rounded-md border border-input bg-background p-2 text-xs"
             >
-              <option value="">Select Type</option>
+              <option value="">Select Type…</option>
               {types.map((t) => (
                 <option key={t.id} value={t.id}>{t.name}</option>
               ))}
             </select>
           </div>
-
           <div>
             <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Category *</label>
             <select
               value={category_id}
-              disabled={!type_id}
               onChange={(e) => { setCat(e.target.value); setSub(""); setFam(""); }}
+              disabled={!type_id}
               className="mt-1 w-full rounded-md border border-input bg-background p-2 text-xs disabled:opacity-50"
             >
-              <option value="">Select Category</option>
+              <option value="">Select Category…</option>
               {filteredCats.map((c) => (
                 <option key={c.id} value={c.id}>{c.name}</option>
               ))}
             </select>
           </div>
-
           <div>
             <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Subcategory *</label>
             <select
               value={subcategory_id}
-              disabled={!category_id}
               onChange={(e) => { setSub(e.target.value); setFam(""); }}
+              disabled={!category_id}
               className="mt-1 w-full rounded-md border border-input bg-background p-2 text-xs disabled:opacity-50"
             >
-              <option value="">Select Subcategory</option>
+              <option value="">Select Subcategory…</option>
               {filteredSubs.map((s) => (
                 <option key={s.id} value={s.id}>{s.name}</option>
               ))}
             </select>
           </div>
-
           <div>
             <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Family Group *</label>
             <select
               value={family_id}
-              disabled={!subcategory_id}
               onChange={(e) => setFam(e.target.value)}
+              disabled={!subcategory_id}
               className="mt-1 w-full rounded-md border border-input bg-background p-2 text-xs disabled:opacity-50"
             >
-              <option value="">Select Family Group</option>
+              <option value="">Select Family…</option>
               {filteredFams.map((f) => (
                 <option key={f.id} value={f.id}>{f.name}</option>
               ))}
@@ -456,48 +455,36 @@ function RebuiltNewProductPage() {
           </div>
         </div>
 
-        {/* Product Attributes */}
+        {/* Essential Product Fields */}
         <div className="grid gap-3 sm:grid-cols-3">
-          <div>
+          <div className="sm:col-span-2">
             <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Product Name *</label>
             <input
               type="text"
-              placeholder="e.g. Arabescato White Marble Tile"
+              placeholder="e.g. Statuario White Polished Porcelain Tile"
               value={form.name}
               onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-              className="mt-1 w-full rounded-md border border-input bg-background p-2 text-xs font-medium"
+              className="mt-1 w-full rounded-md border border-input bg-background p-2 text-xs"
             />
           </div>
-
           <div>
             <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Product Code</label>
             <input
               type="text"
-              placeholder={previewCode || "Auto-generated"}
+              placeholder={previewCode ? `Auto: ${previewCode}` : "Code"}
               value={form.code}
               onChange={(e) => setForm((f) => ({ ...f, code: e.target.value }))}
               className="mt-1 w-full rounded-md border border-input bg-background p-2 text-xs font-mono"
             />
           </div>
-
-          <div>
-            <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Production / Factory Name</label>
-            <input
-              type="text"
-              placeholder="e.g. Factory Batch A12"
-              value={form.production_name}
-              onChange={(e) => setForm((f) => ({ ...f, production_name: e.target.value }))}
-              className="mt-1 w-full rounded-md border border-input bg-background p-2 text-xs"
-            />
-          </div>
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-4">
           <div>
             <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Brand</label>
             <input
               type="text"
-              placeholder="e.g. Virony / Stoneworks"
+              placeholder="e.g. Virony"
               value={form.brand}
               onChange={(e) => setForm((f) => ({ ...f, brand: e.target.value }))}
               className="mt-1 w-full rounded-md border border-input bg-background p-2 text-xs"
@@ -509,7 +496,7 @@ function RebuiltNewProductPage() {
               type="number"
               value={form.price}
               onChange={(e) => setForm((f) => ({ ...f, price: e.target.value }))}
-              className="mt-1 w-full rounded-md border border-input bg-background p-2 text-xs font-mono"
+              className="mt-1 w-full rounded-md border border-input bg-background p-2 text-xs"
             />
           </div>
           <div>
@@ -522,9 +509,6 @@ function RebuiltNewProductPage() {
               className="mt-1 w-full rounded-md border border-input bg-background p-2 text-xs"
             />
           </div>
-        </div>
-
-        <div className="grid gap-3 sm:grid-cols-3">
           <div>
             <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Finish</label>
             <input
@@ -535,6 +519,9 @@ function RebuiltNewProductPage() {
               className="mt-1 w-full rounded-md border border-input bg-background p-2 text-xs"
             />
           </div>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2">
           <div>
             <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Material</label>
             <input
@@ -615,7 +602,7 @@ function RebuiltNewProductPage() {
         </div>
       </section>
 
-      {/* SECTION 3: Publishing Settings */}
+      {/* SECTION 3: Publishing */}
       <section className="rounded-xl border border-border bg-card p-5 shadow-sm space-y-4">
         <div className="flex items-center gap-2 border-b border-border pb-3">
           <ShieldCheck className="h-4 w-4 text-primary" />
@@ -623,43 +610,17 @@ function RebuiltNewProductPage() {
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-4">
-          <div className="flex flex-wrap items-center gap-4">
+          <div className="flex items-center gap-3">
             <button
               type="button"
               onClick={() => setIsAiMode(!isAiMode)}
-              className={`rounded-full px-3 py-1 text-xs font-bold uppercase tracking-wider transition ${
-                isAiMode ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
-              }`}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition ${isAiMode ? "bg-primary" : "bg-muted"}`}
             >
-              Mode: {isAiMode ? "AI Managed" : "Manual Managed"}
+              <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition ${isAiMode ? "translate-x-6" : "translate-x-1"}`} />
             </button>
-            <label className="flex items-center gap-1.5 text-xs font-semibold">
-              <input
-                type="checkbox"
-                checked={form.featured_homepage}
-                onChange={(e) => setForm((f) => ({ ...f, featured_homepage: e.target.checked }))}
-                className="rounded border-input text-primary"
-              />
-              Featured Homepage
-            </label>
-            <label className="flex items-center gap-1.5 text-xs font-semibold">
-              <input
-                type="checkbox"
-                checked={form.featured_feed}
-                onChange={(e) => setForm((f) => ({ ...f, featured_feed: e.target.checked }))}
-                className="rounded border-input text-primary"
-              />
-              Featured Feed
-            </label>
-            <label className="flex items-center gap-1.5 text-xs font-semibold">
-              <input
-                type="checkbox"
-                checked={form.hidden}
-                onChange={(e) => setForm((f) => ({ ...f, hidden: e.target.checked }))}
-                className="rounded border-input text-primary"
-              />
-              Hidden
-            </label>
+            <span className="text-xs font-semibold text-foreground">
+              {isAiMode ? "AI Mode Active (Auto Intelligence Routing)" : "Manual Mode (Direct Metadata Entry)"}
+            </span>
           </div>
 
           <div className="flex items-center gap-2">
@@ -683,7 +644,7 @@ function RebuiltNewProductPage() {
         </div>
       </section>
 
-      {/* SECTION 4: Advanced AI Operations (Collapsed by default) */}
+      {/* SECTION 4: Advanced AI (Collapsed by default) */}
       <section className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
         <button
           type="button"
@@ -704,7 +665,7 @@ function RebuiltNewProductPage() {
               <button
                 type="button"
                 onClick={handleGenerateDetailsOnNew}
-                disabled={generatingDetails}
+                disabled={generatingDetails || !form.name.trim()}
                 className="flex items-center justify-center gap-2 rounded border border-primary/40 bg-primary/10 px-4 py-3 text-xs font-bold text-primary hover:bg-primary/20 transition disabled:opacity-50"
               >
                 <Sparkles className="h-4 w-4" />
@@ -724,18 +685,29 @@ function RebuiltNewProductPage() {
               <button
                 type="button"
                 onClick={handleRunFullPipelineOnNew}
-                disabled={runningPipeline}
+                disabled={runningPipeline || !form.name.trim()}
                 className="flex items-center justify-center gap-2 rounded bg-primary px-4 py-3 text-xs font-bold uppercase tracking-wider text-primary-foreground hover:bg-primary/95 transition shadow-sm disabled:opacity-50"
               >
                 <Sparkles className="h-4 w-4" />
                 {runningPipeline ? "Running Full Pipeline…" : "Run Full Pipeline"}
               </button>
             </div>
+
+            {/* AI Status & Log */}
+            <div className="rounded-lg border border-border bg-background p-3 text-xs space-y-2 font-mono text-muted-foreground">
+              <div className="flex items-center justify-between text-foreground font-semibold">
+                <span>AI Pipeline Execution Log</span>
+                <span className="text-[10px] text-primary">{aiIntelligence ? "Payload Received" : "Idle"}</span>
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                {aiIntelligence ? `Generated title: "${aiIntelligence.seo_title || "OK"}" | Synced description length: ${(form.description || "").length} chars` : "No AI execution log generated yet. Click above to run Engine 1 or Engine 2."}
+              </p>
+            </div>
           </div>
         )}
       </section>
 
-      {/* SECTION 5: Google SEO & Metadata (Collapsed by default) */}
+      {/* SECTION 5: SEO (Collapsed by default) */}
       <section className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
         <button
           type="button"
@@ -756,7 +728,6 @@ function RebuiltNewProductPage() {
               <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">SEO Title</label>
               <input
                 type="text"
-                placeholder="Google Search Title"
                 value={form.seo_title}
                 onChange={(e) => setForm((f) => ({ ...f, seo_title: e.target.value }))}
                 className="mt-1 w-full rounded-md border border-input bg-background p-2 text-xs"
@@ -765,14 +736,13 @@ function RebuiltNewProductPage() {
 
             <div>
               <div className="flex items-center justify-between">
-                <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Product Description & SEO Description (Synced)</label>
+                <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">SEO Description & Product Description (Synced)</label>
                 <span className="text-[9px] text-primary font-semibold">Critical Sync Rule Active</span>
               </div>
               <textarea
                 rows={3}
-                placeholder="Product description that will also sync directly to Google SEO Description"
-                value={form.description}
-                onChange={(e) => handleDescriptionChange(e.target.value)}
+                value={form.seo_description}
+                onChange={(e) => handleSeoDescriptionChange(e.target.value)}
                 className="mt-1 w-full rounded-md border border-input bg-background p-2 text-xs leading-relaxed"
               />
             </div>
@@ -782,7 +752,6 @@ function RebuiltNewProductPage() {
                 <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">SEO Keywords (Comma Separated)</label>
                 <input
                   type="text"
-                  placeholder="e.g. porcelain tile, marble tile"
                   value={form.seo_keywords}
                   onChange={(e) => setForm((f) => ({ ...f, seo_keywords: e.target.value }))}
                   className="mt-1 w-full rounded-md border border-input bg-background p-2 text-xs"
@@ -792,7 +761,6 @@ function RebuiltNewProductPage() {
                 <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Canonical Slug</label>
                 <input
                   type="text"
-                  placeholder="auto-generated-slug"
                   value={form.canonical_slug}
                   onChange={(e) => setForm((f) => ({ ...f, canonical_slug: e.target.value }))}
                   className="mt-1 w-full rounded-md border border-input bg-background p-2 text-xs font-mono"
@@ -803,7 +771,7 @@ function RebuiltNewProductPage() {
         )}
       </section>
 
-      {/* SECTION 6: Search Intelligence Index (Collapsed by default) */}
+      {/* SECTION 6: Search Intelligence (Collapsed by default) */}
       <section className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
         <button
           type="button"
@@ -821,18 +789,18 @@ function RebuiltNewProductPage() {
         {showSearchSection && (
           <div className="p-5 border-t border-border space-y-4 bg-muted/10">
             <div>
-              <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Search Keywords (App Keywords)</label>
+              <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Search Keywords</label>
               <textarea
                 rows={2}
                 value={form.search_keywords}
                 onChange={(e) => setForm((f) => ({ ...f, search_keywords: e.target.value }))}
-                className="mt-1 w-full rounded-md border border-input bg-background p-2 text-xs font-mono"
+                className="mt-1 w-full rounded-md border border-input bg-background p-2 text-xs"
               />
             </div>
 
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
-                <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Alternative Terms</label>
+                <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Alternative Names</label>
                 <input
                   type="text"
                   value={form.alternative_terms}

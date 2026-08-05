@@ -9,25 +9,29 @@ import { generateStandaloneLifestyleImage } from "@/lib/lifestyle-image.function
 import { runProductDetailsEngine } from "@/lib/product-details.functions";
 import { ImageUploader, ImageTile, publicImageUrl } from "@/components/ImageUploader";
 import { ImageEditorModal } from "@/components/ImageEditorModal";
+import { triggerSitemapUpdate } from "@/lib/seo-publisher";
 
 export const Route = createFileRoute("/_authenticated/admin/products/$id")({
   component: RebuiltEditProductPage,
 });
 
+type Tax = { id: string; name: string };
+type Cat = Tax & { type_id: string };
+type Sub = Tax & { category_id: string };
+type Fam = Tax & { subcategory_id: string };
+
 function RebuiltEditProductPage() {
   const { id } = Route.useParams();
   const navigate = useNavigate();
-  const [product, setProduct] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
+
+  const [p, setP] = useState<any>(null);
+  const [types, setTypes] = useState<(Tax & { code_prefix?: string })[]>([]);
+  const [cats, setCats] = useState<Cat[]>([]);
+  const [subs, setSubs] = useState<Sub[]>([]);
+  const [fams, setFams] = useState<Fam[]>([]);
+
   const [saving, setSaving] = useState(false);
-
-  // Hierarchy option states
-  const [types, setTypes] = useState<any[]>([]);
-  const [cats, setCats] = useState<any[]>([]);
-  const [subs, setSubs] = useState<any[]>([]);
-  const [fams, setFams] = useState<any[]>([]);
-
-  // AI Pipeline States
+  const [isDirty, setIsDirty] = useState(false);
   const [generatingDetails, setGeneratingDetails] = useState(false);
   const [generatingLifestyle, setGeneratingLifestyle] = useState(false);
   const [runningPipeline, setRunningPipeline] = useState(false);
@@ -40,145 +44,132 @@ function RebuiltEditProductPage() {
   const [showSeoSection, setShowSeoSection] = useState(false);
   const [showSearchSection, setShowSearchSection] = useState(false);
 
-  const fetchProduct = useCallback(async () => {
-    setLoading(true);
-    const [pRes, tRes, cRes, sRes, fRes] = await Promise.all([
-      supabase.from("products").select("*").eq("id", id).maybeSingle(),
-      supabase.from("product_types").select("id,name").order("name"),
-      supabase.from("categories").select("id,name,type_id").order("name"),
-      supabase.from("subcategories").select("id,name,category_id").order("name"),
-      supabase.from("family_groups").select("id,name,subcategory_id").order("name"),
-    ]);
+  const runDetailsFn = useServerFn(runProductDetailsEngine);
+  const generateLifestyleFn = useServerFn(generateStandaloneLifestyleImage);
+  const runPipelineFn = useServerFn(runProductPipeline);
 
-    if (pRes.error || !pRes.data) {
-      toast.error("Product not found");
-      navigate({ to: "/admin/products" });
-      return;
-    }
-
-    setProduct(pRes.data);
-    setTypes(tRes.data || []);
-    setCats(cRes.data || []);
-    setSubs(sRes.data || []);
-    setFams(fRes.data || []);
-    setLoading(false);
-  }, [id, navigate]);
+  const load = useCallback(async () => {
+    const { data, error } = await supabase.from("products").select("*").eq("id", id).maybeSingle();
+    if (error) return toast.error(error.message);
+    if (!data) return toast.error("Product not found");
+    setP(data);
+  }, [id]);
 
   useEffect(() => {
-    void fetchProduct();
-  }, [fetchProduct]);
+    load();
+    (async () => {
+      const [t, c, s, f] = await Promise.all([
+        supabase.from("product_types").select("id,name").order("name"),
+        supabase.from("categories").select("id,name,type_id").order("name"),
+        supabase.from("subcategories").select("id,name,category_id").order("name"),
+        supabase.from("family_groups").select("id,name,subcategory_id").order("name"),
+      ]);
+      setTypes((t.data ?? []) as any);
+      setCats((c.data ?? []) as any);
+      setSubs((s.data ?? []) as any);
+      setFams((f.data ?? []) as any);
+    })();
+  }, [id, load]);
 
-  const p = product || {};
+  const filteredCats = useMemo(() => cats.filter((c) => c.type_id === p?.type_id), [cats, p?.type_id]);
+  const filteredSubs = useMemo(() => subs.filter((s) => s.category_id === p?.category_id), [subs, p?.category_id]);
+  const filteredFams = useMemo(() => fams.filter((f) => f.subcategory_id === p?.subcategory_id), [fams, p?.subcategory_id]);
 
-  const setField = (field: string, val: any) => {
-    setProduct((prev: any) => {
-      const next = { ...prev, [field]: val };
-      // CRITICAL SYNC RULE: Description <-> SEO Description
-      if (field === "description" || field === "short_description") {
-        next.description = val;
-        next.short_description = val;
-        next.seo_description = val;
-      } else if (field === "seo_description") {
-        next.description = val;
-        next.short_description = val;
-        next.seo_description = val;
+  if (!p) return <div className="container-app py-10 text-sm text-muted-foreground font-mono">Loading product data…</div>;
+
+  const setField = (key: string, value: any) => {
+    setP((prev: any) => {
+      const next = { ...prev, [key]: value };
+      // CRITICAL SYNC RULE: Product Description = SEO Description
+      if (key === "short_description" || key === "generated_description") {
+        next.short_description = value;
+        next.generated_description = value;
+        next.seo_description = value;
+      } else if (key === "seo_description") {
+        next.seo_description = value;
+        next.short_description = value;
+        next.generated_description = value;
       }
       return next;
     });
+    setIsDirty(true);
   };
 
-  const filteredCats = useMemo(() => cats.filter((c) => c.type_id === p.type_id), [cats, p.type_id]);
-  const filteredSubs = useMemo(() => subs.filter((s) => s.category_id === p.category_id), [subs, p.category_id]);
-  const filteredFams = useMemo(() => fams.filter((f) => f.subcategory_id === p.subcategory_id), [fams, p.subcategory_id]);
-
-  const runDetailsFn = useServerFn(runProductDetailsEngine);
-
+  // ENGINE 1 Execution
   const handleGenerateDetails = async () => {
     setGeneratingDetails(true);
     try {
       const res = await runDetailsFn({ data: { productId: id } });
       if (res.ok) {
-        toast.success("Engine 1: Product details generated successfully!");
-        await fetchProduct();
+        toast.success("Engine 1: Product details & SEO description generated!");
+        await load();
       } else {
-        toast.error(res.error || "Failed to generate details");
+        toast.error("Failed to generate product details.");
       }
     } catch (e: any) {
-      toast.error(e.message);
+      toast.error(e.message ?? "Generation failed");
     } finally {
       setGeneratingDetails(false);
     }
   };
 
+  // ENGINE 2 Execution
   const handleGenerateLifestyle = async () => {
     if (!p.image_url) {
-      toast.error("Please upload an Original Product Image first.");
+      toast.error("Original product image is required before generating an installed image.");
       return;
     }
     setGeneratingLifestyle(true);
     try {
-      const res = await generateStandaloneLifestyleImage({ data: { productId: id } });
-      if (res.ok && res.imageUrl) {
-        toast.success("Engine 2: Installed lifestyle image generated successfully!");
-        setField("generated_installed_image", res.imageUrl);
-        await fetchProduct();
+      const res = await generateLifestyleFn({ data: { productId: id } });
+      if (res.ok) {
+        toast.success("Engine 2: Installed lifestyle image generated!");
+        await load();
       } else {
-        toast.error("Failed to generate installed image");
+        toast.error("Failed to generate installed image.");
       }
     } catch (e: any) {
-      toast.error(e.message);
+      toast.error(e.message ?? "Generation failed");
     } finally {
       setGeneratingLifestyle(false);
     }
   };
 
+  // Full Pipeline Execution
   const handleRunFullPipeline = async () => {
     setRunningPipeline(true);
-    await handleGenerateDetails();
-    if (p.image_url) {
-      await handleGenerateLifestyle();
+    try {
+      const res = await runPipelineFn({ data: { productId: id } });
+      if (res.ok) {
+        toast.success("Full AI pipeline completed!");
+        await load();
+      } else {
+        toast.error("Pipeline run failed.");
+      }
+    } catch (e: any) {
+      toast.error(e.message ?? "Pipeline run failed");
+    } finally {
+      setRunningPipeline(false);
     }
-    setRunningPipeline(false);
-    toast.success("Full AI pipeline completed!");
   };
 
+  // SAVE HANDLER
   const save = async () => {
-    if (!p.name?.trim()) return toast.error("Product name is required.");
-    if (!p.image_url) return toast.error("Original product image is required.");
-
     setSaving(true);
-    const finalSyncedDesc = (p.seo_description || p.short_description || p.generated_description || p.description || "").trim();
-
+    const syncedDesc = p.seo_description || p.short_description || p.generated_description || null;
     const payload = {
-      type_id: p.type_id || null,
-      category_id: p.category_id || null,
-      subcategory_id: p.subcategory_id || null,
-      family_id: p.family_id || null,
-      name: p.name.trim(),
-      code: p.code ? p.code.trim() : null,
-      production_name: p.production_name ? p.production_name.trim() : null,
-      finish_name: p.finish_name ? p.finish_name.trim() : null,
-      brand: p.brand ? p.brand.trim() : null,
-      color: p.color ? p.color.trim() : null,
-      material: p.material ? p.material.trim() : null,
-      size: p.size ? p.size.trim() : null,
-      price: Number(p.price) || 0,
-      image_url: p.image_url,
-      status: p.status || "published",
-      featured_homepage: !!p.featured_homepage,
-      featured_feed: !!p.featured_feed,
-      hidden: !!p.hidden,
-      short_description: finalSyncedDesc,
-      generated_description: finalSyncedDesc,
-      seo_title: p.seo_title ? p.seo_title.trim() : null,
-      seo_description: finalSyncedDesc,
-      seo_keywords: p.seo_keywords || [],
-      canonical_slug: p.canonical_slug ? p.canonical_slug.trim() : null,
-      app_keywords: p.app_keywords || [],
-      app_search_keywords: p.app_keywords || [],
-      generated_installed_image: p.generated_installed_image || null,
+      ...p,
+      short_description: syncedDesc,
+      generated_description: syncedDesc,
+      seo_description: syncedDesc,
       is_published: p.status === "published",
+      price: Number(p.price) || 0,
+      processing_state: "completed",
     };
+    delete payload.id;
+    delete payload.created_at;
+    delete payload.updated_at;
+    delete payload.similar_product_ids;
 
     const { error } = await supabase.from("products").update(payload as any).eq("id", id);
     if (error) {
@@ -186,49 +177,31 @@ function RebuiltEditProductPage() {
       return toast.error(error.message);
     }
 
-    // Rebuild search index
+    // Rebuild search index & trigger SEO discovery sitemap update
     await supabase.rpc("rebuild_search_index" as any, { _product_id: id } as any);
+    await triggerSitemapUpdate(id);
 
     setSaving(false);
-    toast.success("Product saved & search index updated!");
-    navigate({ to: "/admin/products" });
+    setIsDirty(false);
+    toast.success("Product changes saved, search index & sitemaps updated!");
+    await load();
   };
 
-  const deleteProduct = async () => {
-    if (!confirm("Are you sure you want to delete this product?")) return;
-    const { error } = await supabase.from("products").delete().eq("id", id);
-    if (error) return toast.error(error.message);
-    toast.success("Product deleted");
-    navigate({ to: "/admin/products" });
-  };
-
-  if (loading) {
-    return <div className="p-12 text-center text-xs text-muted-foreground">Loading product parameters…</div>;
-  }
-
-  const strToArr = (str: string) => (str ? str.split(",").map((s) => s.trim()).filter(Boolean) : []);
-  const arrToStr = (arr: any) => (Array.isArray(arr) ? arr.join(", ") : arr || "");
+  const arrToStr = (v: any) => (Array.isArray(v) ? v.join(", ") : v ?? "");
+  const strToArr = (v: string) => v.split(",").map((s) => s.trim()).filter(Boolean);
 
   return (
     <div className="container-app py-6 max-w-5xl space-y-6">
-      {/* Header */}
+      {/* Header Navigation & Controls */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border pb-4">
-        <div className="flex items-center gap-3">
-          <Link to="/admin/products" className="rounded-full border border-border p-2 hover:bg-muted transition">
-            <ArrowLeft className="h-4 w-4" />
+        <div>
+          <Link to="/admin/products" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground mb-1">
+            <ArrowLeft className="h-3.5 w-3.5" /> Back to library
           </Link>
-          <div>
-            <h1 className="font-display text-2xl font-bold tracking-tight text-foreground uppercase">Edit Product</h1>
-            <p className="text-xs text-muted-foreground font-mono">ID: {id} · {p.code || "No Code"}</p>
-          </div>
+          <h1 className="font-display text-2xl font-bold tracking-tight text-foreground uppercase">{p.name || "Edit Product"}</h1>
+          <p className="text-xs text-muted-foreground mt-0.5 font-mono">ID: {id} · Code: {p.code}</p>
         </div>
         <div className="flex items-center gap-2">
-          <button
-            onClick={deleteProduct}
-            className="rounded border border-destructive/40 text-destructive px-3 py-2 text-xs font-semibold hover:bg-destructive/10 transition flex items-center gap-1"
-          >
-            <Trash2 className="h-3.5 w-3.5" /> Delete
-          </button>
           <button
             onClick={save}
             disabled={saving}
@@ -252,55 +225,49 @@ function RebuiltEditProductPage() {
             <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Product Type *</label>
             <select
               value={p.type_id || ""}
-              onChange={(e) => { setField("type_id", e.target.value); setField("category_id", null); setField("subcategory_id", null); setField("family_id", null); }}
+              onChange={(e) => setField("type_id", e.target.value)}
               className="mt-1 w-full rounded-md border border-input bg-background p-2 text-xs"
             >
-              <option value="">Select Type</option>
+              <option value="">Select Type…</option>
               {types.map((t) => (
                 <option key={t.id} value={t.id}>{t.name}</option>
               ))}
             </select>
           </div>
-
           <div>
             <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Category *</label>
             <select
               value={p.category_id || ""}
-              disabled={!p.type_id}
-              onChange={(e) => { setField("category_id", e.target.value); setField("subcategory_id", null); setField("family_id", null); }}
-              className="mt-1 w-full rounded-md border border-input bg-background p-2 text-xs disabled:opacity-50"
+              onChange={(e) => setField("category_id", e.target.value)}
+              className="mt-1 w-full rounded-md border border-input bg-background p-2 text-xs"
             >
-              <option value="">Select Category</option>
+              <option value="">Select Category…</option>
               {filteredCats.map((c) => (
                 <option key={c.id} value={c.id}>{c.name}</option>
               ))}
             </select>
           </div>
-
           <div>
             <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Subcategory *</label>
             <select
               value={p.subcategory_id || ""}
-              disabled={!p.category_id}
-              onChange={(e) => { setField("subcategory_id", e.target.value); setField("family_id", null); }}
-              className="mt-1 w-full rounded-md border border-input bg-background p-2 text-xs disabled:opacity-50"
+              onChange={(e) => setField("subcategory_id", e.target.value)}
+              className="mt-1 w-full rounded-md border border-input bg-background p-2 text-xs"
             >
-              <option value="">Select Subcategory</option>
+              <option value="">Select Subcategory…</option>
               {filteredSubs.map((s) => (
                 <option key={s.id} value={s.id}>{s.name}</option>
               ))}
             </select>
           </div>
-
           <div>
             <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Family Group *</label>
             <select
               value={p.family_id || ""}
-              disabled={!p.subcategory_id}
               onChange={(e) => setField("family_id", e.target.value)}
-              className="mt-1 w-full rounded-md border border-input bg-background p-2 text-xs disabled:opacity-50"
+              className="mt-1 w-full rounded-md border border-input bg-background p-2 text-xs"
             >
-              <option value="">Select Family Group</option>
+              <option value="">Select Family…</option>
               {filteredFams.map((f) => (
                 <option key={f.id} value={f.id}>{f.name}</option>
               ))}
@@ -308,18 +275,17 @@ function RebuiltEditProductPage() {
           </div>
         </div>
 
-        {/* Product Attributes */}
+        {/* Product Fields */}
         <div className="grid gap-3 sm:grid-cols-3">
-          <div>
+          <div className="sm:col-span-2">
             <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Product Name *</label>
             <input
               type="text"
               value={p.name || ""}
               onChange={(e) => setField("name", e.target.value)}
-              className="mt-1 w-full rounded-md border border-input bg-background p-2 text-xs font-medium"
+              className="mt-1 w-full rounded-md border border-input bg-background p-2 text-xs"
             />
           </div>
-
           <div>
             <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Product Code</label>
             <input
@@ -327,16 +293,6 @@ function RebuiltEditProductPage() {
               value={p.code || ""}
               onChange={(e) => setField("code", e.target.value)}
               className="mt-1 w-full rounded-md border border-input bg-background p-2 text-xs font-mono"
-            />
-          </div>
-
-          <div>
-            <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Production / Factory Name</label>
-            <input
-              type="text"
-              value={p.production_name || ""}
-              onChange={(e) => setField("production_name", e.target.value)}
-              className="mt-1 w-full rounded-md border border-input bg-background p-2 text-xs"
             />
           </div>
         </div>

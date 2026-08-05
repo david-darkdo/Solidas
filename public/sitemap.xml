@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <sitemap>
+    <loc>https://showroom.enreach.concepts/sitemap-pages.xml</loc>
+  </sitemap>
+  <sitemap>
+    <loc>https://showroom.enreach.concepts/sitemap-categories.xml</loc>
+  </sitemap>
+  <sitemap>
+    <loc>https://showroom.enreach.concepts/sitemap-products.xml</loc>
+  </sitemap>
+  <sitemap>
+    <loc>https://showroom.enreach.concepts/sitemap-images.xml</loc>
+  </sitemap>
+</sitemapindex>
