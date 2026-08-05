@@ -167,14 +167,15 @@ export function getCachedUserCollectionItems(userId: string): { collection_id: s
   }
 }
 
-/** Guaranteed active collection generator (Schema-Safe against PGRST100) */
+/** Guaranteed active collection generator (Schema-Safe against PGRST100 & Filters Submitted) */
 export async function ensureUserCollection(userId: string): Promise<string> {
   if (!userId) return "";
   try {
     const { data: existing } = await supabase
       .from("collections")
-      .select("id, name, user_id, created_at")
+      .select("id, name, user_id, created_at, status")
       .eq("user_id", userId)
+      .neq("status", "Submitted")
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -208,7 +209,6 @@ export async function ensureUserCollection(userId: string): Promise<string> {
 export async function getUserCollectionItems(userId: string) {
   const cacheKey = `${CACHED_ITEMS_KEY_PREFIX}${userId}`;
 
-  // Return cached items synchronously if offline
   if (typeof window !== "undefined" && !navigator.onLine) {
     try {
       const cached = JSON.parse(window.localStorage.getItem(cacheKey) || "null");
@@ -363,7 +363,17 @@ export async function lockAndSubmitCollection(collectionId: string, userId?: str
     } catch {}
   }
 
-  // 2. Clear local active draft cache & user requirement maps to prepare clean new workspace
+  // 2. Automatically create a brand-new empty Draft Collection for the user in Supabase
+  if (userId) {
+    try {
+      await supabase.from("collections").insert({
+        user_id: userId,
+        name: "Project Workspace"
+      });
+    } catch {}
+  }
+
+  // 3. Clear local active draft cache & user requirement maps to prepare clean new workspace
   if (typeof window !== "undefined") {
     if (userId) {
       const cacheKey = `${CACHED_ITEMS_KEY_PREFIX}${userId}`;

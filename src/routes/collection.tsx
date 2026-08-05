@@ -338,7 +338,7 @@ function CollectionPage() {
 
       // 1. Lock and submit collection into History
       if (id) {
-        await lockAndSubmitCollection(id);
+        await lockAndSubmitCollection(id, user?.id);
       }
 
       // 2. Auto-create CRM inquiry
