@@ -312,12 +312,21 @@ function TopBar() {
             {menuOpen && (
               <div className="absolute right-0 mt-2 w-48 rounded-lg border border-border bg-card py-1 shadow-lg z-50">
                 <Link
-                  to="/favorites"
+                  to="/collection"
+                  search={{ autoPush: false }}
                   onClick={() => setMenuOpen(false)}
                   className="flex items-center gap-2 px-4 py-2 text-sm text-foreground hover:bg-muted"
                 >
                   <Bookmark className="h-4 w-4" />
-                  <span>My Favorites</span>
+                  <span>Active Workspace</span>
+                </Link>
+                <Link
+                  to="/my-collections"
+                  onClick={() => setMenuOpen(false)}
+                  className="flex items-center gap-2 px-4 py-2 text-sm text-foreground hover:bg-muted"
+                >
+                  <Bookmark className="h-4 w-4 text-amber-600" />
+                  <span>Collection History</span>
                 </Link>
                 {isAdmin && (
                   <Link

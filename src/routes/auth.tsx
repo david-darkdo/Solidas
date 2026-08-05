@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
+import { createFileRoute, useNavigate, Link, useSearch } from "@tanstack/react-router";
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { mergeGuestIntoUser } from "@/lib/collection";
@@ -6,14 +6,21 @@ import { useAuth } from "@/hooks/use-auth";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/auth")({
+  validateSearch: (search: Record<string, unknown>): { redirectTo?: string; autoPush?: boolean } => {
+    return {
+      redirectTo: search.redirectTo ? String(search.redirectTo) : undefined,
+      autoPush: search.autoPush === "true" || search.autoPush === true ? true : undefined,
+    };
+  },
   head: () => ({
-    meta: [{ title: "Sign in — Stoneworks" }],
+    meta: [{ title: "Sign in — Enreach Concepts" }],
   }),
   component: AuthPage,
 });
 
 function AuthPage() {
   const navigate = useNavigate();
+  const search = useSearch({ from: "/auth" });
   const { user } = useAuth();
   const [mode, setMode] = useState<"signin" | "signup">("signin");
   const [email, setEmail] = useState("");
@@ -21,9 +28,17 @@ function AuthPage() {
   const [fullName, setFullName] = useState("");
   const [busy, setBusy] = useState(false);
 
+  const targetPath = search.autoPush ? `${search.redirectTo || "/collection"}?autoPush=true` : (search.redirectTo || "/collection");
+
   if (user) {
-    // Already signed in — redirect to collection
-    setTimeout(() => navigate({ to: "/collection" }), 0);
+    // Already signed in — redirect to destination with autoPush
+    setTimeout(() => {
+      if (search.autoPush) {
+        navigate({ to: "/collection", search: { autoPush: true } });
+      } else {
+        navigate({ to: (search.redirectTo as any) || "/collection" });
+      }
+    }, 0);
   }
 
   const submit = async (e: React.FormEvent) => {
@@ -35,7 +50,7 @@ function AuthPage() {
           email,
           password,
           options: {
-            emailRedirectTo: window.location.origin,
+            emailRedirectTo: `${window.location.origin}${targetPath}`,
             data: { full_name: fullName },
           },
         });
@@ -43,7 +58,11 @@ function AuthPage() {
         if (data.user) {
           await mergeGuestIntoUser(data.user.id);
           toast.success("Account created");
-          navigate({ to: "/collection" });
+          if (search.autoPush) {
+            navigate({ to: "/collection", search: { autoPush: true } });
+          } else {
+            navigate({ to: (search.redirectTo as any) || "/collection" });
+          }
         } else {
           toast("Check your email to confirm your account");
         }
@@ -52,7 +71,11 @@ function AuthPage() {
         if (error) throw error;
         if (data.user) await mergeGuestIntoUser(data.user.id);
         toast.success("Welcome back");
-        navigate({ to: "/collection" });
+        if (search.autoPush) {
+          navigate({ to: "/collection", search: { autoPush: true } });
+        } else {
+          navigate({ to: (search.redirectTo as any) || "/collection" });
+        }
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Something went wrong");
@@ -63,10 +86,11 @@ function AuthPage() {
 
   const google = async () => {
     setBusy(true);
+    const redirectUrl = `${window.location.origin}/collection?autoPush=true`;
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: window.location.origin,
+        redirectTo: redirectUrl,
       },
     });
     if (error) {
@@ -79,13 +103,13 @@ function AuthPage() {
     <div className="container-app max-w-md py-10">
       <h1 className="font-display text-2xl font-semibold">{mode === "signin" ? "Sign in" : "Create account"}</h1>
       <p className="mt-1 text-sm text-muted-foreground">
-        {mode === "signin" ? "Sync your collection across devices." : "Save & share collections, push to WhatsApp."}
+        {mode === "signin" ? "Sync your collection across devices and submit quotation requests." : "Save & share collections, push to WhatsApp."}
       </p>
 
       <button
         onClick={google}
         disabled={busy}
-        className="mt-6 flex w-full items-center justify-center gap-2 rounded-md border border-border bg-card px-4 py-2.5 text-sm font-medium hover:bg-surface-2"
+        className="mt-6 flex w-full items-center justify-center gap-2 rounded-md border border-border bg-card px-4 py-2.5 text-sm font-medium hover:bg-surface-2 transition"
       >
         <span className="grid h-5 w-5 place-items-center rounded-full bg-white text-[10px] font-bold text-[#4285F4]">G</span>
         Continue with Google

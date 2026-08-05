@@ -126,29 +126,37 @@ function AccountPage() {
       </section>
 
       <section className="mt-4 grid gap-3 sm:grid-cols-2">
-        <Link to="/collection" className="flex items-center gap-3 rounded-xl border border-border bg-card p-4 hover:border-primary">
-          <Bookmark className="h-5 w-5 text-primary" />
+        <Link to="/collection" search={{ autoPush: false }} className="flex items-center gap-3 rounded-xl border border-border bg-card p-4 hover:border-emerald-500 transition">
+          <Bookmark className="h-5 w-5 text-emerald-600" />
           <div>
-            <div className="font-medium">My Collection</div>
-            <div className="text-xs text-muted-foreground">Saved products & shareable list</div>
+            <div className="font-medium text-sm">Active Project Workspace</div>
+            <div className="text-xs text-muted-foreground">Current working project draft & products</div>
+          </div>
+        </Link>
+
+        <Link to="/my-collections" className="flex items-center gap-3 rounded-xl border border-border bg-card p-4 hover:border-amber-500 transition">
+          <Bookmark className="h-5 w-5 text-amber-600" />
+          <div>
+            <div className="font-medium text-sm">My Collections History</div>
+            <div className="text-xs text-muted-foreground">Immutable records of submitted quotation requests</div>
           </div>
         </Link>
 
         {isAdmin && (
-          <Link to="/admin" className="flex items-center gap-3 rounded-xl border border-border bg-card p-4 hover:border-primary">
+          <Link to="/admin" className="flex items-center gap-3 rounded-xl border border-border bg-card p-4 hover:border-primary transition">
             <Shield className="h-5 w-5 text-primary" />
             <div>
-              <div className="font-medium">Admin Panel</div>
-              <div className="text-xs text-muted-foreground">Manage products & inquiries</div>
+              <div className="font-medium text-sm">Admin CRM & Quotations</div>
+              <div className="text-xs text-muted-foreground">Manage products & quotation pipeline</div>
             </div>
           </Link>
         )}
 
         {isSuperAdmin && (
-          <Link to="/settings" className="flex items-center gap-3 rounded-xl border border-border bg-card p-4 hover:border-primary">
+          <Link to="/settings" className="flex items-center gap-3 rounded-xl border border-border bg-card p-4 hover:border-primary transition">
             <SettingsIcon className="h-5 w-5 text-primary" />
             <div>
-              <div className="font-medium">Company Settings</div>
+              <div className="font-medium text-sm">Company Settings</div>
               <div className="text-xs text-muted-foreground">Contact info, socials, WhatsApp</div>
             </div>
           </Link>
