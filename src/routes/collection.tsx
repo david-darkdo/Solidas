@@ -69,6 +69,12 @@ function CollectionPage() {
   useEffect(() => {
     const load = async () => {
       if (user) {
+        // Auto-merge guest items if present upon landing (e.g. after Google OAuth or email sign-in redirect)
+        const guestItems = getGuestCollection();
+        if (guestItems.length > 0) {
+          await mergeGuestIntoUser(user.id);
+        }
+
         // Fetch user profile
         const { data: prof } = await supabase
           .from("profiles")
@@ -109,18 +115,20 @@ function CollectionPage() {
         const prods = await fetchProductsByIds(colItems.map((i: any) => i.product_id));
         setProducts(prods);
 
-        // Map initial requirements
+        // Map initial requirements (combining item DB specifications and user local requirements)
+        const savedUserReqs = getUserItemRequirements(user.id);
         const reqMap: Record<string, ItemRequirements> = {};
         colItems.forEach((ci: any) => {
           const matchingProd = prods.find((p) => p.id === ci.product_id);
           const autoUnit = detectProductUnit(matchingProd);
+          const savedReq = savedUserReqs[ci.product_id] || {};
           reqMap[ci.product_id] = {
-            quantity: ci.quantity ?? 1,
-            unit: ci.unit || autoUnit,
-            installation_location: ci.installation_location || "",
-            delivery_preference: ci.delivery_preference || "Deliver to Site",
-            installation_required: ci.installation_required || "Not Sure",
-            project_notes: ci.project_notes || ""
+            quantity: ci.quantity ?? savedReq.quantity ?? 1,
+            unit: ci.unit || savedReq.unit || autoUnit,
+            installation_location: ci.installation_location || savedReq.installation_location || "",
+            delivery_preference: ci.delivery_preference || savedReq.delivery_preference || "Deliver to Site",
+            installation_required: ci.installation_required || savedReq.installation_required || "Not Sure",
+            project_notes: ci.project_notes || savedReq.project_notes || ""
           };
         });
         setRequirementsMap(reqMap);

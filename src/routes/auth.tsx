@@ -56,7 +56,7 @@ function AuthPage() {
         });
         if (error) throw error;
         if (data.user) {
-          await mergeGuestIntoUser(data.user.id);
+          try { await mergeGuestIntoUser(data.user.id); } catch {}
           toast.success("Account created");
           if (search.autoPush) {
             navigate({ to: "/collection", search: { autoPush: true } });
@@ -69,7 +69,9 @@ function AuthPage() {
       } else {
         const { data, error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
-        if (data.user) await mergeGuestIntoUser(data.user.id);
+        if (data.user) {
+          try { await mergeGuestIntoUser(data.user.id); } catch {}
+        }
         toast.success("Welcome back");
         if (search.autoPush) {
           navigate({ to: "/collection", search: { autoPush: true } });
