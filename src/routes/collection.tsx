@@ -13,15 +13,15 @@ import {
   updateGuestItemRequirements,
   updateUserItemRequirements,
   lockAndSubmitCollection,
-  duplicateCollection,
   generateCollectionReference,
   updateCustomerPhoneNumber,
+  setGuestCollection,
   type ItemRequirements,
   type CollectionV2
 } from "@/lib/collection";
 import { useAppSettings, waLink } from "@/lib/settings";
 import { toast } from "sonner";
-import { MessageCircle, Share2, Trash2, Heart, ChevronDown, ChevronUp, Lock, RefreshCw, FileText, Phone, CheckCircle2, AlertCircle } from "lucide-react";
+import { MessageCircle, Share2, Trash2, Heart, ChevronDown, ChevronUp, Lock, RefreshCw, FileText, Phone, CheckCircle2, AlertCircle, History, Layers } from "lucide-react";
 import { publicImageUrl } from "@/components/ImageUploader";
 
 export const Route = createFileRoute("/collection")({
@@ -30,7 +30,7 @@ export const Route = createFileRoute("/collection")({
       autoPush: search.autoPush === "true" || search.autoPush === true ? true : undefined,
     };
   },
-  head: () => ({ meta: [{ title: "My Project Collection — Enreach Concepts" }] }),
+  head: () => ({ meta: [{ title: "Active Project Workspace — Enreach Concepts" }] }),
   component: CollectionPage,
 });
 
@@ -46,6 +46,8 @@ function CollectionPage() {
   const [collectionData, setCollectionData] = useState<CollectionV2 | null>(null);
   const [userProfile, setUserProfile] = useState<any>(null);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [justSubmitted, setJustSubmitted] = useState(false);
+  const [lastSubmittedRef, setLastSubmittedRef] = useState<string | null>(null);
   
   // Custom double tab toggle views
   const [activeView, setActiveView] = useState<"collection" | "favorites">("collection");
@@ -60,6 +62,9 @@ function CollectionPage() {
   const [showPhoneModal, setShowPhoneModal] = useState(false);
   const [phoneInput, setPhoneInput] = useState("");
   const [whatsappFallbackUrl, setWhatsappFallbackUrl] = useState<string | null>(null);
+
+  // Remove confirmation modal state
+  const [productToRemove, setProductToRemove] = useState<any | null>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -88,11 +93,11 @@ function CollectionPage() {
           setCollectionData({
             id: colInfo.id,
             user_id: colInfo.user_id,
-            name: colInfo.name,
+            name: colInfo.name || "Project Workspace",
             reference_number: (colInfo as any).reference_number || generateCollectionReference(colInfo.id),
             project_name: (colInfo as any).project_name || null,
-            status: (colInfo as any).status || (colInfo.whatsapp_sent ? "Submitted" : "Draft"),
-            is_locked: (colInfo as any).is_locked ?? Boolean(colInfo.whatsapp_sent),
+            status: (colInfo as any).status || "Draft",
+            is_locked: (colInfo as any).is_locked ?? false,
             parent_collection_id: (colInfo as any).parent_collection_id || null,
             version: (colInfo as any).version || 1,
             submitted_at: (colInfo as any).submitted_at || null,
@@ -175,7 +180,6 @@ function CollectionPage() {
   // Auto resume Push to WhatsApp after authentication redirect
   useEffect(() => {
     if (!loading && user && search.autoPush && products.length > 0 && !isSubmitting) {
-      // Remove search param from URL to avoid double triggers
       window.history.replaceState({}, document.title, window.location.pathname);
       void executePushToWhatsApp();
     }
@@ -183,11 +187,6 @@ function CollectionPage() {
 
   // Requirements Auto-Save Handler (on change / blur)
   const handleRequirementChange = async (productId: string, field: keyof ItemRequirements, value: any) => {
-    if (collectionData?.is_locked) {
-      toast.error("This collection has been submitted and is locked from editing.");
-      return;
-    }
-
     const updated = {
       ...(requirementsMap[productId] || {}),
       [field]: value
@@ -212,22 +211,23 @@ function CollectionPage() {
     }));
   };
 
-  const removeFavorite = async (productId: string) => {
-    if (!user) return;
-    const { data: profile } = await supabase.from("profiles").select("id").eq("auth_id", user.id).maybeSingle();
-    if (!profile?.id) return;
-    await supabase.from("favorites").delete().eq("user_id", profile.id).eq("product_id", productId);
-    toast.success("Removed from favorites");
-    setRefreshKey((k) => k + 1);
-  };
-
-  const remove = async (productId: string) => {
-    if (collectionData?.is_locked) {
-      toast.error("This collection is locked after submission.");
-      return;
+  const confirmRemoveProduct = async () => {
+    if (!productToRemove) return;
+    const pId = productToRemove.id;
+    if (activeView === "collection") {
+      if (user) await removeItemFromUserCollection(user.id, pId);
+      else removeGuestItem(pId);
+      toast.success(`Removed ${productToRemove.name} from Active Workspace`);
+    } else {
+      if (user) {
+        const { data: profile } = await supabase.from("profiles").select("id").eq("auth_id", user.id).maybeSingle();
+        if (profile?.id) {
+          await supabase.from("favorites").delete().eq("user_id", profile.id).eq("product_id", pId);
+          toast.success(`Removed ${productToRemove.name} from Favorites`);
+        }
+      }
     }
-    if (user) await removeItemFromUserCollection(user.id, productId);
-    else removeGuestItem(productId);
+    setProductToRemove(null);
     setRefreshKey((k) => k + 1);
   };
 
@@ -271,13 +271,11 @@ function CollectionPage() {
   // Main Push To WhatsApp Flow Orchestrator
   const pushToWhatsApp = async () => {
     if (!user) {
-      // Save intent flag in localStorage and redirect to auth with autoPush
       window.localStorage.setItem("stoneworks.pending_whatsapp_push", "true");
       navigate({ to: "/auth", search: { redirectTo: "/collection", autoPush: true } });
       return;
     }
 
-    // Check if phone number is missing
     const existingPhone = userProfile?.phone_number || user.phone || user.user_metadata?.phone;
     if (!existingPhone) {
       setShowPhoneModal(true);
@@ -319,16 +317,15 @@ function CollectionPage() {
     try {
       const activeItems = activeView === "collection" ? products : favoriteProducts;
       const shareUrl = id ? `${window.location.origin}/collection/${id}` : `${window.location.origin}/collection`;
-      const isLocked = Boolean(collectionData?.is_locked);
       const refNum = collectionData?.reference_number || generateCollectionReference(id || undefined);
       const versionStr = collectionData?.version && collectionData.version > 1 ? ` (v${collectionData.version})` : "";
 
-      // Lock collection if not already locked
-      if (id && !isLocked) {
+      // 1. Lock and submit collection into History
+      if (id) {
         await lockAndSubmitCollection(id);
       }
 
-      // Auto-create inquiry record for CRM
+      // 2. Auto-create CRM inquiry
       if (user && id) {
         try {
           await supabase.from("whatsapp_inquiries").insert({
@@ -385,37 +382,25 @@ function CollectionPage() {
       const msg = messageParts.join("\n");
       const url = waLink(settings.sales_whatsapp, msg);
 
-      // Attempt to open WhatsApp window
+      // Attempt WhatsApp window launch
       const win = window.open(url, "_blank", "noopener,noreferrer");
       if (!win || win.closed || typeof win.closed === "undefined") {
-        // Popup was blocked by browser — set fallback URL banner
         setWhatsappFallbackUrl(url);
         toast("Quotation ready! Click the green button below to launch WhatsApp.");
       } else {
-        toast.success("Quotation request generated and sent to WhatsApp!");
+        toast.success("Quotation request submitted & saved to History!");
       }
 
-      setRefreshKey((k) => k + 1);
+      // PHASE E: WORKSPACE CLEARING AFTER SUBMISSION
+      setGuestCollection([]);
+      setItems([]);
+      setProducts([]);
+      setJustSubmitted(true);
+      setLastSubmittedRef(refNum);
+      setCollectionId(null);
+      setCollectionData(null);
     } catch (err) {
       toast.error("Error submitting quotation request");
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleCreateUpdatedRequest = async () => {
-    if (!collectionId || !user) {
-      toast.error("Please sign in to create an updated request.");
-      return;
-    }
-
-    setIsSubmitting(true);
-    try {
-      const newColId = await duplicateCollection(collectionId, user.id);
-      setCollectionId(newColId);
-      setRefreshKey((k) => k + 1);
-    } catch (err) {
-      toast.error("Failed to duplicate collection for update.");
     } finally {
       setIsSubmitting(false);
     }
@@ -439,9 +424,7 @@ function CollectionPage() {
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="font-display text-2xl font-semibold">
-              {collectionData?.name || "My Project Collection"}
-            </h1>
+            <h1 className="font-display text-2xl font-semibold">Active Project Workspace</h1>
             {collectionData?.reference_number && (
               <span className="rounded-md bg-card text-foreground text-xs font-mono font-bold px-2.5 py-1 border border-border">
                 {collectionData.reference_number}
@@ -454,40 +437,23 @@ function CollectionPage() {
             )}
           </div>
           <p className="text-sm text-muted-foreground mt-1">
-            {user ? "Synced to your account profile" : "Saved on this device — sign in to submit quotation request"}
+            {user ? "Your working project draft — add products and customize specifications." : "Saved locally — sign in to push to WhatsApp and save history."}
           </p>
         </div>
-        {!user && (
-          <Link to="/auth" search={{ redirectTo: "/collection", autoPush: false }} className="rounded-md border border-primary px-3.5 py-1.5 text-sm font-medium text-primary hover:bg-primary/10 transition">
-            Sign in to Save & Push
-          </Link>
-        )}
-      </div>
 
-      {/* Locked Status Alert Banner */}
-      {collectionData?.is_locked && (
-        <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-amber-900 dark:text-amber-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <Lock className="h-5 w-5 text-amber-600 shrink-0" />
-            <div>
-              <p className="font-medium text-sm">Quotation Submitted — Immutable Record ({collectionData.reference_number})</p>
-              <p className="text-xs text-amber-700 dark:text-amber-300">
-                This request was submitted to WhatsApp on {new Date(collectionData.submitted_at || collectionData.updated_at).toLocaleDateString()}. Edits create a new collection version.
-              </p>
-            </div>
-          </div>
+        <div className="flex items-center gap-2 shrink-0">
           {user && (
-            <button
-              onClick={handleCreateUpdatedRequest}
-              disabled={isSubmitting}
-              className="shrink-0 inline-flex items-center gap-1.5 rounded-lg bg-amber-600 px-3.5 py-1.5 text-xs font-medium text-white hover:bg-amber-700 transition"
-            >
-              <RefreshCw className={`h-3.5 w-3.5 ${isSubmitting ? "animate-spin" : ""}`} />
-              Create Updated Request (v{(collectionData.version || 1) + 1})
-            </button>
+            <Link to="/my-collections" className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3.5 py-2 text-xs font-medium hover:bg-surface-2 transition">
+              <History className="h-4 w-4 text-amber-600" /> My Collections History
+            </Link>
+          )}
+          {!user && (
+            <Link to="/auth" search={{ redirectTo: "/collection", autoPush: false }} className="rounded-md border border-primary px-3.5 py-1.5 text-xs font-medium text-primary hover:bg-primary/10 transition">
+              Sign in to Save & Push
+            </Link>
           )}
         </div>
-      )}
+      </div>
 
       {/* Popup Blocker Fallback Banner */}
       {whatsappFallbackUrl && (
@@ -495,8 +461,8 @@ function CollectionPage() {
           <div className="flex items-center gap-3">
             <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0" />
             <div>
-              <p className="font-semibold text-sm">Your Quotation Request is Ready!</p>
-              <p className="text-xs text-emerald-700 dark:text-emerald-300">Click below to continue to WhatsApp and launch your pre-formatted quote.</p>
+              <p className="font-semibold text-sm">Quotation Request Ready!</p>
+              <p className="text-xs text-emerald-700 dark:text-emerald-300">Click below to launch WhatsApp and send your pre-formatted quote.</p>
             </div>
           </div>
           <a
@@ -510,16 +476,32 @@ function CollectionPage() {
         </div>
       )}
 
+      {/* Post-Submission Success Message */}
+      {justSubmitted && lastSubmittedRef && (
+        <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-emerald-900 dark:text-emerald-200 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0" />
+            <div>
+              <p className="font-medium text-sm">Quotation Request Submitted ({lastSubmittedRef})</p>
+              <p className="text-xs text-emerald-700 dark:text-emerald-300">Saved to your permanent history. Active workspace is cleared and ready for your next project.</p>
+            </div>
+          </div>
+          <Link to="/my-collections" className="text-xs font-semibold text-emerald-700 hover:underline shrink-0">
+            View History →
+          </Link>
+        </div>
+      )}
+
       {/* View Toggles Tab with Heart Icon */}
       {user && (
         <div className="flex gap-4 border-b border-border pb-2 text-xs font-semibold uppercase tracking-wider">
           <button
             onClick={() => setActiveView("collection")}
             className={`pb-1.5 border-b-2 transition ${
-              activeView === "collection" ? "border-primary text-primary" : "border-transparent text-muted-foreground"
+              activeView === "collection" ? "border-emerald-600 text-emerald-600" : "border-transparent text-muted-foreground"
             }`}
           >
-            Selected Products ({products.length})
+            Active Working Draft ({products.length})
           </button>
           <button
             onClick={() => setActiveView("favorites")}
@@ -535,31 +517,40 @@ function CollectionPage() {
 
       {/* 2. SELECTED PRODUCTS LIST (PRIMARY CONTENT FIRST) */}
       {(activeView === "collection" ? products : favoriteProducts).length === 0 ? (
-        <div className="rounded-xl border border-dashed border-border p-10 text-center">
-          <FileText className="h-10 w-10 text-muted-foreground/40 mx-auto mb-3" />
-          <p className="text-sm font-medium text-foreground">
-            {activeView === "collection" ? "Your collection is empty." : "You have not favorited any products yet."}
-          </p>
-          <p className="text-xs text-muted-foreground mt-1 max-w-md mx-auto">
-            Browse our catalogue of premium tiles, stone, and sanitary wares to select products for your project.
-          </p>
-          <Link to="/" className="mt-4 inline-block rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90">
-            Browse Showroom Catalogue
-          </Link>
+        <div className="rounded-2xl border-2 border-dashed border-border p-10 sm:p-14 text-center bg-card/50 space-y-4">
+          <div className="grid h-14 w-14 place-items-center rounded-full bg-emerald-500/10 text-emerald-600 mx-auto">
+            <Layers className="h-7 w-7" />
+          </div>
+          <div>
+            <h3 className="font-display text-xl font-semibold text-foreground">No active project workspace</h3>
+            <p className="text-sm text-muted-foreground mt-1 max-w-md mx-auto">
+              Start building your next project! Browse our curated catalogue of premium tiles, natural stone, and sanitary wares to add products.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+            <Link to="/" className="rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 shadow-sm transition">
+              Browse Showroom Catalogue
+            </Link>
+            {user && (
+              <Link to="/my-collections" className="rounded-lg border border-border bg-background px-4 py-2.5 text-sm font-medium hover:bg-surface-2 transition">
+                View Collection History
+              </Link>
+            )}
+          </div>
         </div>
       ) : (
         <>
-          <ul className="space-y-3">
+          <ul className="space-y-4">
             {(activeView === "collection" ? products : favoriteProducts).map((p) => {
               const req = requirementsMap[p.id] || {};
               const detectedUnit = detectProductUnit(p);
               const isExpanded = Boolean(expandedMap[p.id]);
-              const isLocked = Boolean(collectionData?.is_locked);
 
               // Collapsed Preview Text String
               const previewParts = [
                 `Quantity: ${req.quantity || 1} ${req.unit || detectedUnit}`,
-                req.installation_location ? `Location: ${req.installation_location}` : null,
+                req.installation_location ? `Loc: ${req.installation_location}` : null,
                 req.delivery_preference ? `Delivery: ${req.delivery_preference}` : null,
                 req.installation_required && req.installation_required !== "Not Sure" ? `Install: ${req.installation_required}` : null,
                 req.project_notes ? `Notes: ${req.project_notes}` : null
@@ -567,9 +558,9 @@ function CollectionPage() {
               const collapsedPreview = previewParts.join(" | ");
 
               return (
-                <li key={p.id} className="rounded-xl border border-border bg-card overflow-hidden transition shadow-sm hover:border-primary/40">
+                <li key={p.id} className="rounded-xl border-2 border-emerald-500/30 bg-card overflow-hidden transition shadow-sm shadow-emerald-500/5 hover:border-emerald-500">
                   {/* Main Product Card Row */}
-                  <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 p-4">
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 p-4 sm:p-5">
                     <Link to="/product/$slug" params={{ slug: p.slug }} className="block h-16 w-16 shrink-0 overflow-hidden rounded-lg bg-muted border border-border/40">
                       <img src={publicImageUrl(p.generated_studio_image) || publicImageUrl(p.image_url) || ""} alt={p.name} className="h-full w-full object-cover" loading="lazy" />
                     </Link>
@@ -585,7 +576,7 @@ function CollectionPage() {
 
                       {/* Collapsed Preview Badge Text */}
                       {!isExpanded && (
-                        <p className="text-xs text-primary/90 font-medium mt-1 truncate">
+                        <p className="text-xs text-emerald-600 dark:text-emerald-400 font-medium mt-1 truncate">
                           {collapsedPreview}
                         </p>
                       )}
@@ -597,36 +588,35 @@ function CollectionPage() {
                         ₦{Number(p.price).toLocaleString()}
                       </div>
                       <div className="flex items-center gap-1.5">
-                        <span className="rounded-full bg-primary/10 text-primary text-xs font-semibold px-2.5 py-0.5 border border-primary/20">
+                        <span className="rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 text-xs font-semibold px-2.5 py-0.5 border border-emerald-500/20">
                           {req.quantity || 1} {req.unit || detectedUnit}
                         </span>
                         <button
                           onClick={() => toggleExpand(p.id)}
-                          className="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:text-primary/80 px-2 py-1 rounded-md hover:bg-surface-2 transition"
+                          className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 dark:text-emerald-400 hover:opacity-80 px-2 py-1 rounded-md hover:bg-surface-2 transition"
                         >
                           {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                          <span>{isExpanded ? "Hide Requirements" : "▼ Project Requirements"}</span>
+                          <span>{isExpanded ? "Hide Specs" : "▼ Project Requirements"}</span>
                         </button>
                       </div>
                     </div>
 
-                    {!isLocked && (
-                      <button 
-                        onClick={() => activeView === "collection" ? remove(p.id) : removeFavorite(p.id)} 
-                        aria-label="Remove" 
-                        className="rounded-lg p-2 text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition shrink-0"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    )}
+                    <button 
+                      onClick={() => setProductToRemove(p)} 
+                      aria-label="Remove Product" 
+                      title="Remove from Active Workspace"
+                      className="rounded-lg p-2 text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition shrink-0"
+                    >
+                      <Trash2 className="h-4.5 w-4.5" />
+                    </button>
                   </div>
 
                   {/* Expandable Project Requirement Form Panel (Auto-Saves on Blur/Change) */}
                   {isExpanded && (
-                    <div className="border-t border-border/60 bg-surface-2/40 p-4 sm:p-5 text-sm space-y-4">
+                    <div className="border-t border-emerald-500/20 bg-surface-2/40 p-4 sm:p-5 text-sm space-y-4">
                       <div className="flex items-center justify-between">
                         <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
-                          <FileText className="h-3.5 w-3.5 text-primary" /> Project Specifications & Requirements
+                          <FileText className="h-3.5 w-3.5 text-emerald-600" /> Project Specifications & Requirements
                         </h4>
                         <span className="text-xs text-muted-foreground">
                           Auto-Detected Unit: <strong className="text-foreground">{detectedUnit}</strong>
@@ -634,19 +624,31 @@ function CollectionPage() {
                       </div>
 
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                        {/* Quantity with Auto-Unit Badge */}
+                        {/* Quantity with Highlight on Focus & Blur Normalization */}
                         <div>
                           <label className="block text-xs font-medium text-muted-foreground mb-1">Required Quantity</label>
                           <div className="relative flex items-center">
                             <input
                               type="number"
                               min="1"
-                              disabled={isLocked}
-                              value={req.quantity || 1}
-                              onChange={(e) => handleRequirementChange(p.id, "quantity", Math.max(1, parseInt(e.target.value) || 1))}
-                              className="w-full rounded-lg border border-border bg-background px-3 py-1.5 text-sm font-medium focus:ring-2 focus:ring-primary focus:outline-none disabled:opacity-60"
+                              value={req.quantity ?? ""}
+                              onFocus={(e) => e.target.select()}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                if (val === "") {
+                                  handleRequirementChange(p.id, "quantity", "");
+                                } else {
+                                  handleRequirementChange(p.id, "quantity", Math.max(1, parseInt(val) || 1));
+                                }
+                              }}
+                              onBlur={(e) => {
+                                if (!e.target.value || parseInt(e.target.value) < 1) {
+                                  handleRequirementChange(p.id, "quantity", 1);
+                                }
+                              }}
+                              className="w-full rounded-lg border border-border bg-background px-3 py-1.5 text-sm font-medium focus:ring-2 focus:ring-emerald-500 focus:outline-none"
                             />
-                            <span className="absolute right-2 text-xs font-bold text-primary bg-primary/10 border border-primary/20 px-2 py-0.5 rounded-md">
+                            <span className="absolute right-2 text-xs font-bold text-emerald-700 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-md">
                               {req.unit || detectedUnit}
                             </span>
                           </div>
@@ -657,11 +659,10 @@ function CollectionPage() {
                           <label className="block text-xs font-medium text-muted-foreground mb-1">Installation Location</label>
                           <input
                             type="text"
-                            disabled={isLocked}
                             placeholder="e.g. Kitchen Floor, Master Bath"
                             value={req.installation_location || ""}
                             onChange={(e) => handleRequirementChange(p.id, "installation_location", e.target.value)}
-                            className="w-full rounded-lg border border-border bg-background px-3 py-1.5 text-sm focus:ring-2 focus:ring-primary focus:outline-none disabled:opacity-60"
+                            className="w-full rounded-lg border border-border bg-background px-3 py-1.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none"
                           />
                         </div>
 
@@ -669,10 +670,9 @@ function CollectionPage() {
                         <div>
                           <label className="block text-xs font-medium text-muted-foreground mb-1">Delivery Preference</label>
                           <select
-                            disabled={isLocked}
                             value={req.delivery_preference || "Deliver to Site"}
                             onChange={(e) => handleRequirementChange(p.id, "delivery_preference", e.target.value)}
-                            className="w-full rounded-lg border border-border bg-background px-3 py-1.5 text-sm focus:ring-2 focus:ring-primary focus:outline-none disabled:opacity-60"
+                            className="w-full rounded-lg border border-border bg-background px-3 py-1.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none"
                           >
                             <option value="Deliver to Site">Deliver to Site</option>
                             <option value="Warehouse Pickup">Warehouse Pickup</option>
@@ -686,10 +686,9 @@ function CollectionPage() {
                         <div>
                           <label className="block text-xs font-medium text-muted-foreground mb-1">Installation Service Required?</label>
                           <select
-                            disabled={isLocked}
                             value={req.installation_required || "Not Sure"}
                             onChange={(e) => handleRequirementChange(p.id, "installation_required", e.target.value)}
-                            className="w-full rounded-lg border border-border bg-background px-3 py-1.5 text-sm focus:ring-2 focus:ring-primary focus:outline-none disabled:opacity-60"
+                            className="w-full rounded-lg border border-border bg-background px-3 py-1.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none"
                           >
                             <option value="Not Sure">Not Sure (Need Technical Advice)</option>
                             <option value="Yes">Yes (Require Installation Team)</option>
@@ -702,11 +701,10 @@ function CollectionPage() {
                           <label className="block text-xs font-medium text-muted-foreground mb-1">Specific Notes & Allowances</label>
                           <input
                             type="text"
-                            disabled={isLocked}
                             placeholder="e.g. Polished finish preferred, 10% wastage allowance"
                             value={req.project_notes || ""}
                             onChange={(e) => handleRequirementChange(p.id, "project_notes", e.target.value)}
-                            className="w-full rounded-lg border border-border bg-background px-3 py-1.5 text-sm focus:ring-2 focus:ring-primary focus:outline-none disabled:opacity-60"
+                            className="w-full rounded-lg border border-border bg-background px-3 py-1.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none"
                           />
                         </div>
                       </div>
@@ -720,7 +718,7 @@ function CollectionPage() {
           {/* 3. COMPREHENSIVE COLLECTION SUMMARY (REVIEW PHASE BEFORE SUBMISSION) */}
           <div className="rounded-xl border border-border bg-card p-5 shadow-sm space-y-4">
             <div className="flex items-center justify-between border-b border-border/60 pb-3">
-              <h2 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Project Collection Summary Review</h2>
+              <h2 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Project Workspace Summary Review</h2>
               {collectionData?.reference_number && (
                 <span className="text-xs font-mono font-medium text-muted-foreground">Ref: {collectionData.reference_number}</span>
               )}
@@ -733,7 +731,7 @@ function CollectionPage() {
               </div>
               <div className="rounded-lg bg-surface-2/60 p-3 border border-border/50">
                 <span className="text-[11px] text-muted-foreground block">Est. Total Quantity</span>
-                <span className="font-semibold text-base text-primary">{summaryMetrics.totalQtyString}</span>
+                <span className="font-semibold text-base text-emerald-600">{summaryMetrics.totalQtyString}</span>
               </div>
               <div className="rounded-lg bg-surface-2/60 p-3 border border-border/50">
                 <span className="text-[11px] text-muted-foreground block">Est. Collection Value</span>
@@ -751,26 +749,15 @@ function CollectionPage() {
               </div>
             </div>
 
-            {/* 4 & 5. ACTION BUTTONS: PUSH TO WHATSAPP & SHARE COLLECTION */}
+            {/* ACTION BUTTONS: PUSH TO WHATSAPP & SHARE COLLECTION */}
             <div className="pt-2 flex flex-wrap items-center gap-3">
-              {collectionData?.is_locked ? (
-                <button
-                  onClick={handleCreateUpdatedRequest}
-                  disabled={isSubmitting}
-                  className="inline-flex items-center gap-2 rounded-lg bg-amber-600 px-6 py-3 text-sm font-semibold text-white hover:bg-amber-700 transition shadow-sm"
-                >
-                  <RefreshCw className={`h-4 w-4 ${isSubmitting ? "animate-spin" : ""}`} />
-                  Create Updated Request (v{(collectionData.version || 1) + 1})
-                </button>
-              ) : (
-                <button
-                  onClick={pushToWhatsApp}
-                  disabled={isSubmitting}
-                  className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-6 py-3 text-sm font-semibold text-white hover:bg-emerald-700 transition shadow-sm"
-                >
-                  <MessageCircle className="h-4 w-4" /> Push to WhatsApp
-                </button>
-              )}
+              <button
+                onClick={pushToWhatsApp}
+                disabled={isSubmitting}
+                className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-6 py-3 text-sm font-semibold text-white hover:bg-emerald-700 transition shadow-sm"
+              >
+                <MessageCircle className="h-4 w-4" /> Push to WhatsApp
+              </button>
 
               {activeView === "collection" && (
                 <button
@@ -785,12 +772,46 @@ function CollectionPage() {
         </>
       )}
 
+      {/* REMOVE PRODUCT CONFIRMATION MODAL */}
+      {productToRemove && (
+        <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-sm rounded-xl border border-border bg-card p-6 shadow-2xl space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="grid h-10 w-10 place-items-center rounded-full bg-destructive/10 text-destructive shrink-0">
+                <Trash2 className="h-5 w-5" />
+              </div>
+              <div>
+                <h3 className="font-display text-base font-semibold">Remove Product?</h3>
+                <p className="text-xs text-muted-foreground">Are you sure you want to remove <strong className="text-foreground">{productToRemove.name}</strong> from your Active Workspace?</p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setProductToRemove(null)}
+                className="rounded-lg border border-border px-4 py-2 text-xs font-medium hover:bg-surface-2 transition"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmRemoveProduct}
+                className="rounded-lg bg-destructive px-4 py-2 text-xs font-semibold text-destructive-foreground hover:bg-destructive/90 transition"
+              >
+                Remove Product
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* PHONE NUMBER COLLECTION MODAL */}
       {showPhoneModal && (
         <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="w-full max-w-md rounded-xl border border-border bg-card p-6 shadow-2xl space-y-4">
             <div className="flex items-center gap-3">
-              <div className="grid h-10 w-10 place-items-center rounded-full bg-primary/10 text-primary shrink-0">
+              <div className="grid h-10 w-10 place-items-center rounded-full bg-emerald-500/10 text-emerald-600 shrink-0">
                 <Phone className="h-5 w-5" />
               </div>
               <div>
@@ -808,7 +829,7 @@ function CollectionPage() {
                   placeholder="e.g. +234 801 234 5678"
                   value={phoneInput}
                   onChange={(e) => setPhoneInput(e.target.value)}
-                  className="w-full rounded-lg border border-border bg-background px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-primary focus:outline-none"
+                  className="w-full rounded-lg border border-border bg-background px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none"
                 />
               </div>
 

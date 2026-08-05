@@ -232,23 +232,57 @@ export async function syncOfflineActions() {
   toast.success("Synchronized offline collection changes!");
 }
 
-/** Get or create a "My Collection" for the signed-in user. */
+/** Get or create the unique active unlocked "Project Workspace" draft for the signed-in user. */
 export async function ensureUserCollection(userId: string): Promise<string> {
+  // Query strictly for unique unlocked active working draft
   const { data: existing } = await supabase
     .from("collections")
     .select("id")
     .eq("user_id", userId)
-    .order("created_at", { ascending: true })
+    .eq("is_locked", false)
+    .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
+
   if (existing?.id) return existing.id;
-  const { data, error } = await supabase
+
+  const refNum = generateCollectionReference();
+  try {
+    const { data, error } = await supabase
+      .from("collections")
+      .insert({
+        user_id: userId,
+        name: "Project Workspace",
+        reference_number: refNum,
+        status: "Draft",
+        is_locked: false,
+        version: 1
+      } as any)
+      .select("id")
+      .single();
+
+    if (error) throw error;
+    return data.id;
+  } catch (err) {
+    const { data: fallbackData } = await supabase
+      .from("collections")
+      .insert({ user_id: userId, name: "Project Workspace" })
+      .select("id")
+      .single();
+    return fallbackData?.id || "";
+  }
+}
+
+/** Fetch all submitted immutable history records for a user, newest first. */
+export async function getUserCollectionHistory(userId: string): Promise<any[]> {
+  const { data: cols } = await supabase
     .from("collections")
-    .insert({ user_id: userId, name: "My Collection" })
-    .select("id")
-    .single();
-  if (error) throw error;
-  return data.id;
+    .select("*")
+    .eq("user_id", userId)
+    .eq("is_locked", true)
+    .order("submitted_at", { ascending: false });
+
+  return cols || [];
 }
 
 export async function addItemToUserCollection(userId: string, product_id: string) {
