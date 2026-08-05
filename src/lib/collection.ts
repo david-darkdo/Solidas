@@ -32,6 +32,7 @@ export interface CollectionV2 {
   id: string;
   user_id: string;
   name: string;
+  reference_number?: string | null;
   project_name?: string | null;
   status: string;
   is_locked: boolean;
@@ -41,6 +42,36 @@ export interface CollectionV2 {
   created_at: string;
   updated_at: string;
   internal_notes?: string | null;
+}
+
+/** Generate a professional reference code: e.g. ENC-2026-000123 */
+export function generateCollectionReference(id?: string): string {
+  if (!id) return `ENC-2026-${Math.floor(100000 + Math.random() * 900000)}`;
+  const hexNum = id.replace(/-/g, "").substring(0, 6).toUpperCase();
+  return `ENC-2026-${hexNum}`;
+}
+
+export async function updateCustomerPhoneNumber(userId: string, phoneNumber: string): Promise<void> {
+  if (!userId || !phoneNumber) return;
+  try {
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("id")
+      .eq("auth_id", userId)
+      .maybeSingle();
+
+    if (profile?.id) {
+      await supabase
+        .from("profiles")
+        .update({
+          phone_number: phoneNumber,
+          preferred_contact_method: "WhatsApp"
+        } as any)
+        .eq("id", profile.id);
+    }
+  } catch (err) {
+    console.error("Failed to save phone number to profile:", err);
+  }
 }
 
 export type GuestItem = { 
@@ -296,12 +327,31 @@ export async function mergeGuestIntoUser(userId: string) {
   const guest = getGuestCollection();
   if (!guest.length) return;
   const collection_id = await ensureUserCollection(userId);
-  await supabase
-    .from("collection_items")
-    .upsert(
-      guest.map((g) => ({ collection_id, product_id: g.product_id })),
-      { onConflict: "collection_id,product_id", ignoreDuplicates: true },
-    );
+
+  const itemsToUpsert = guest.map((g) => ({
+    collection_id,
+    product_id: g.product_id,
+    quantity: g.quantity ?? 1,
+    unit: g.unit || null,
+    installation_location: g.installation_location || null,
+    delivery_preference: g.delivery_preference || "Deliver to Site",
+    installation_required: g.installation_required || "Not Sure",
+    project_notes: g.project_notes || null
+  }));
+
+  try {
+    await supabase
+      .from("collection_items")
+      .upsert(itemsToUpsert as any, { onConflict: "collection_id,product_id", ignoreDuplicates: false });
+  } catch (err) {
+    // Fallback basic upsert
+    await supabase
+      .from("collection_items")
+      .upsert(
+        guest.map((g) => ({ collection_id, product_id: g.product_id })),
+        { onConflict: "collection_id,product_id", ignoreDuplicates: true },
+      );
+  }
   setGuestCollection([]);
 }
 
@@ -318,21 +368,22 @@ export async function fetchProductsByIds(ids: string[]) {
 }
 
 /** Lock collection after Push to WhatsApp submission */
-export async function lockAndSubmitCollection(collectionId: string): Promise<void> {
+export async function lockAndSubmitCollection(collectionId: string): Promise<string> {
   const now = new Date().toISOString();
+  const refNum = generateCollectionReference(collectionId);
   try {
     const { error } = await supabase
       .from("collections")
       .update({
-        status: "Sent",
+        status: "Submitted",
+        reference_number: refNum,
         is_locked: true,
         submitted_at: now,
         whatsapp_sent: true
-      })
+      } as any)
       .eq("id", collectionId);
     
     if (error) {
-      // Fallback update if new DDL columns are not yet in PostgREST schema cache
       await supabase
         .from("collections")
         .update({
@@ -344,6 +395,7 @@ export async function lockAndSubmitCollection(collectionId: string): Promise<voi
   } catch (err) {
     console.error("Error locking collection:", err);
   }
+  return refNum;
 }
 
 /** Create an updated request by duplicating an existing locked collection */

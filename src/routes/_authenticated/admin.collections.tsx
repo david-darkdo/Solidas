@@ -17,9 +17,11 @@ type Row = {
   id: string;
   user_id: string;
   name: string;
+  reference_number: string | null;
   project_name: string | null;
   customer_name: string | null;
   customer_email: string | null;
+  customer_phone: string | null;
   customer_profile_id: string | null;
   products_count: number;
   created_at: string;
@@ -48,7 +50,7 @@ function CollectionsCrmPage() {
     const [{ data: colls }, { data: items }, { data: profs }, { data: inqs }, { data: roleRows }] = await Promise.all([
       supabase.from("collections").select("*").order("created_at", { ascending: false }),
       supabase.from("collection_items").select("*"),
-      supabase.from("profiles").select("id,auth_id,full_name,email"),
+      supabase.from("profiles").select("id,auth_id,full_name,email,phone_number"),
       supabase.from("whatsapp_inquiries").select("id,collection_id,assigned_admin_id,inquiry_status"),
       supabase.from("user_roles").select("user_id,role"),
     ]);
@@ -79,9 +81,11 @@ function CollectionsCrmPage() {
         id: c.id,
         user_id: c.user_id,
         name: c.name || "Collection",
+        reference_number: c.reference_number || null,
         project_name: c.project_name || null,
         customer_name: p?.full_name ?? null,
         customer_email: p?.email ?? null,
+        customer_phone: p?.phone_number ?? null,
         customer_profile_id: p?.id ?? null,
         products_count: itemCount.get(c.id) ?? 0,
         created_at: c.created_at,
@@ -221,8 +225,18 @@ function CollectionsCrmPage() {
           <div className="w-full max-w-2xl rounded-xl border border-border bg-card p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-border pb-3">
               <div>
-                <h3 className="font-display text-lg font-semibold">{selectedRow.name} (v{selectedRow.version})</h3>
-                <p className="text-xs text-muted-foreground">Customer: {selectedRow.customer_name || selectedRow.customer_email || "Guest"}</p>
+                <div className="flex items-center gap-2">
+                  <h3 className="font-display text-lg font-semibold">{selectedRow.name} (v{selectedRow.version})</h3>
+                  {selectedRow.reference_number && (
+                    <span className="rounded-md bg-card text-foreground text-xs font-mono font-bold px-2 py-0.5 border border-border">
+                      {selectedRow.reference_number}
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Customer: {selectedRow.customer_name || selectedRow.customer_email || "Guest"}
+                  {selectedRow.customer_phone && ` • Phone: ${selectedRow.customer_phone}`}
+                </p>
               </div>
               <button onClick={() => setSelectedRow(null)} className="rounded-md border border-border px-3 py-1 text-xs font-medium hover:bg-surface-2">Close</button>
             </div>

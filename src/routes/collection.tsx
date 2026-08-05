@@ -1,4 +1,4 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { useEffect, useState, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
@@ -14,41 +14,65 @@ import {
   updateUserItemRequirements,
   lockAndSubmitCollection,
   duplicateCollection,
+  generateCollectionReference,
+  updateCustomerPhoneNumber,
   type ItemRequirements,
   type CollectionV2
 } from "@/lib/collection";
 import { useAppSettings, waLink } from "@/lib/settings";
 import { toast } from "sonner";
-import { MessageCircle, Share2, Trash2, Heart, ChevronDown, ChevronUp, Lock, Copy, RefreshCw, FileText, CheckCircle2 } from "lucide-react";
+import { MessageCircle, Share2, Trash2, Heart, ChevronDown, ChevronUp, Lock, RefreshCw, FileText, Phone, CheckCircle2, AlertCircle } from "lucide-react";
 import { publicImageUrl } from "@/components/ImageUploader";
 
 export const Route = createFileRoute("/collection")({
-  head: () => ({ meta: [{ title: "My Project Collection — Stoneworks" }] }),
+  validateSearch: (search: Record<string, unknown>) => {
+    return {
+      autoPush: search.autoPush === "true" || search.autoPush === true,
+    };
+  },
+  head: () => ({ meta: [{ title: "My Project Collection — Enreach Concepts" }] }),
   component: CollectionPage,
 });
 
 function CollectionPage() {
   const { user, loading } = useAuth();
+  const search = useSearch({ from: "/collection" });
   const navigate = useNavigate();
   const { data: settings } = useAppSettings();
+
   const [items, setItems] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
   const [collectionId, setCollectionId] = useState<string | null>(null);
   const [collectionData, setCollectionData] = useState<CollectionV2 | null>(null);
+  const [userProfile, setUserProfile] = useState<any>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   
   // Custom double tab toggle views
   const [activeView, setActiveView] = useState<"collection" | "favorites">("collection");
   const [favoriteProducts, setFavoriteProducts] = useState<any[]>([]);
 
-  // V2 Project Requirements state per product
+  // Project Requirements state per product
   const [requirementsMap, setRequirementsMap] = useState<Record<string, ItemRequirements>>({});
   const [expandedMap, setExpandedMap] = useState<Record<string, boolean>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Phone modal & popup blocker fallback state
+  const [showPhoneModal, setShowPhoneModal] = useState(false);
+  const [phoneInput, setPhoneInput] = useState("");
+  const [whatsappFallbackUrl, setWhatsappFallbackUrl] = useState<string | null>(null);
+
   useEffect(() => {
     const load = async () => {
       if (user) {
+        // Fetch user profile
+        const { data: prof } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("auth_id", user.id)
+          .maybeSingle();
+
+        setUserProfile(prof);
+
         const { collection_id, items: colItems } = await getUserCollectionItems(user.id);
         setCollectionId(collection_id);
         setItems(colItems);
@@ -65,8 +89,9 @@ function CollectionPage() {
             id: colInfo.id,
             user_id: colInfo.user_id,
             name: colInfo.name,
+            reference_number: (colInfo as any).reference_number || generateCollectionReference(colInfo.id),
             project_name: (colInfo as any).project_name || null,
-            status: (colInfo as any).status || (colInfo.whatsapp_sent ? "Sent" : "Draft"),
+            status: (colInfo as any).status || (colInfo.whatsapp_sent ? "Submitted" : "Draft"),
             is_locked: (colInfo as any).is_locked ?? Boolean(colInfo.whatsapp_sent),
             parent_collection_id: (colInfo as any).parent_collection_id || null,
             version: (colInfo as any).version || 1,
@@ -99,6 +124,7 @@ function CollectionPage() {
         setItems(guest);
         setCollectionId(null);
         setCollectionData(null);
+        setUserProfile(null);
         const prods = await fetchProductsByIds(guest.map((g) => g.product_id));
         setProducts(prods);
 
@@ -146,7 +172,16 @@ function CollectionPage() {
     }
   }, [user, loading, refreshKey]);
 
-  // Update item requirements handler
+  // Auto resume Push to WhatsApp after authentication redirect
+  useEffect(() => {
+    if (!loading && user && search.autoPush && products.length > 0 && !isSubmitting) {
+      // Remove search param from URL to avoid double triggers
+      window.history.replaceState({}, document.title, window.location.pathname);
+      void executePushToWhatsApp();
+    }
+  }, [loading, user, search.autoPush, products.length]);
+
+  // Requirements Auto-Save Handler (on change / blur)
   const handleRequirementChange = async (productId: string, field: keyof ItemRequirements, value: any) => {
     if (collectionData?.is_locked) {
       toast.error("This collection has been submitted and is locked from editing.");
@@ -196,10 +231,12 @@ function CollectionPage() {
     setRefreshKey((k) => k + 1);
   };
 
-  // Collection Summary metrics
+  // Comprehensive Collection Summary Metrics
   const summaryMetrics = useMemo(() => {
     const activeProds = activeView === "collection" ? products : favoriteProducts;
     let totalPrice = 0;
+    let deliveryItemsCount = 0;
+    let installerRequestedCount = 0;
     const unitTotals: Record<string, number> = {};
 
     activeProds.forEach((p) => {
@@ -210,6 +247,13 @@ function CollectionPage() {
 
       totalPrice += price * qty;
       unitTotals[unit] = (unitTotals[unit] || 0) + qty;
+
+      if (req.delivery_preference !== "Warehouse Pickup") {
+        deliveryItemsCount++;
+      }
+      if (req.installation_required === "Yes") {
+        installerRequestedCount++;
+      }
     });
 
     const qtyStringParts = Object.entries(unitTotals).map(([unit, count]) => `${count} ${unit}`);
@@ -218,23 +262,65 @@ function CollectionPage() {
     return {
       totalProducts: activeProds.length,
       totalQtyString,
-      totalPriceFormatted: `₦${totalPrice.toLocaleString()}`
+      totalPriceFormatted: `₦${totalPrice.toLocaleString()}`,
+      deliveryItemsCount,
+      installerRequestedCount
     };
   }, [products, favoriteProducts, requirementsMap, activeView]);
 
+  // Main Push To WhatsApp Flow Orchestrator
   const pushToWhatsApp = async () => {
+    if (!user) {
+      // Save intent flag in localStorage and redirect to auth with autoPush
+      window.localStorage.setItem("stoneworks.pending_whatsapp_push", "true");
+      navigate({ to: "/auth", search: { redirectTo: "/collection", autoPush: true } });
+      return;
+    }
+
+    // Check if phone number is missing
+    const existingPhone = userProfile?.phone_number || user.phone || user.user_metadata?.phone;
+    if (!existingPhone) {
+      setShowPhoneModal(true);
+      return;
+    }
+
+    await executePushToWhatsApp();
+  };
+
+  const handlePhoneSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!phoneInput.trim()) {
+      toast.error("Please enter a valid phone number");
+      return;
+    }
+
+    if (user) {
+      await updateCustomerPhoneNumber(user.id, phoneInput.trim());
+      setUserProfile((prev: any) => ({ ...(prev || {}), phone_number: phoneInput.trim() }));
+    }
+
+    setShowPhoneModal(false);
+    toast.success("Phone number saved to profile");
+    await executePushToWhatsApp();
+  };
+
+  const executePushToWhatsApp = async () => {
     if (!settings?.sales_whatsapp) {
       toast.error("Sales WhatsApp not configured");
       return;
     }
+
     let id = collectionId;
     if (!id && user) id = await ensureUserCollection(user.id);
 
     setIsSubmitting(true);
+    setWhatsappFallbackUrl(null);
+
     try {
       const activeItems = activeView === "collection" ? products : favoriteProducts;
       const shareUrl = id ? `${window.location.origin}/collection/${id}` : `${window.location.origin}/collection`;
       const isLocked = Boolean(collectionData?.is_locked);
+      const refNum = collectionData?.reference_number || generateCollectionReference(id || undefined);
       const versionStr = collectionData?.version && collectionData.version > 1 ? ` (v${collectionData.version})` : "";
 
       // Lock collection if not already locked
@@ -248,9 +334,9 @@ function CollectionPage() {
           await supabase.from("whatsapp_inquiries").insert({
             collection_id: id,
             customer_name: user.user_metadata?.full_name || user.email || "Customer",
-            customer_phone: user.phone || user.user_metadata?.phone || "",
+            customer_phone: userProfile?.phone_number || user.phone || user.user_metadata?.phone || "",
             customer_email: user.email ?? null,
-            whatsapp_number: user.user_metadata?.whatsapp || user.phone || null,
+            whatsapp_number: userProfile?.phone_number || user.user_metadata?.whatsapp || user.phone || null,
             inquiry_status: "NEW",
             status: "pending",
           } as never);
@@ -260,9 +346,15 @@ function CollectionPage() {
       }
 
       const messageParts = [
-        `*ENREACH CONCEPTS — QUOTATION REQUEST${versionStr}*`,
-        `Shared Link: ${shareUrl}`,
-        `Project Name: ${collectionData?.project_name || "General Selection"}`,
+        "Hello Enreach Concepts,",
+        "",
+        "I would like a quotation for my project.",
+        "",
+        `Collection Reference:`,
+        `*${refNum}${versionStr}*`,
+        "",
+        `Collection Link:`,
+        `${shareUrl}`,
         "",
         `*SELECTED PRODUCTS (${activeItems.length}):*`
       ];
@@ -271,26 +363,38 @@ function CollectionPage() {
         const req = requirementsMap[p.id] || {};
         const qty = req.quantity || 1;
         const unit = req.unit || detectProductUnit(p);
-        const loc = req.installation_location ? ` | Location: ${req.installation_location}` : "";
+        const loc = req.installation_location ? ` | Loc: ${req.installation_location}` : "";
         const del = req.delivery_preference ? ` | Delivery: ${req.delivery_preference}` : "";
         const inst = req.installation_required && req.installation_required !== "Not Sure" ? ` | Install: ${req.installation_required}` : "";
         const notes = req.project_notes ? ` | Notes: ${req.project_notes}` : "";
 
         messageParts.push(
-          `${idx + 1}. *${p.name}* (Code: ${p.code})`,
-          `   Quantity: ${qty} ${unit}${loc}${del}${inst}${notes}`
+          `${idx + 1}. *${p.name}* (Code: ${p.code}) — ${qty} ${unit}${loc}${del}${inst}${notes}`
         );
       });
 
       messageParts.push(
         "",
-        `*SUMMARY:*`,
+        `*PROJECT SUMMARY:*`,
         `Total Est. Quantity: ${summaryMetrics.totalQtyString}`,
-        `Total Est. Value: ${summaryMetrics.totalPriceFormatted}`
+        `Total Est. Value: ${summaryMetrics.totalPriceFormatted}`,
+        `Delivery Items: ${summaryMetrics.deliveryItemsCount}`,
+        `Installer Service Requested: ${summaryMetrics.installerRequestedCount > 0 ? "Yes" : "No"}`
       );
 
       const msg = messageParts.join("\n");
-      window.open(waLink(settings.sales_whatsapp, msg), "_blank", "noopener,noreferrer");
+      const url = waLink(settings.sales_whatsapp, msg);
+
+      // Attempt to open WhatsApp window
+      const win = window.open(url, "_blank", "noopener,noreferrer");
+      if (!win || win.closed || typeof win.closed === "undefined") {
+        // Popup was blocked by browser — set fallback URL banner
+        setWhatsappFallbackUrl(url);
+        toast("Quotation ready! Click the green button below to launch WhatsApp.");
+      } else {
+        toast.success("Quotation request generated and sent to WhatsApp!");
+      }
+
       setRefreshKey((k) => k + 1);
     } catch (err) {
       toast.error("Error submitting quotation request");
@@ -330,40 +434,45 @@ function CollectionPage() {
   };
 
   return (
-    <div className="container-app py-6">
-      {/* Header */}
+    <div className="container-app py-6 space-y-6">
+      {/* 1. PAGE TITLE & HEADER */}
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
             <h1 className="font-display text-2xl font-semibold">
               {collectionData?.name || "My Project Collection"}
             </h1>
+            {collectionData?.reference_number && (
+              <span className="rounded-md bg-card text-foreground text-xs font-mono font-bold px-2.5 py-1 border border-border">
+                {collectionData.reference_number}
+              </span>
+            )}
             {collectionData?.version && collectionData.version > 1 && (
               <span className="rounded-full bg-primary/10 text-primary text-xs font-semibold px-2.5 py-0.5 border border-primary/20">
                 v{collectionData.version}
               </span>
             )}
           </div>
-          <p className="text-sm text-muted-foreground mt-0.5">
-            {user ? "Synced to your account" : "Saved on this device — sign in to sync"}
+          <p className="text-sm text-muted-foreground mt-1">
+            {user ? "Synced to your account profile" : "Saved on this device — sign in to submit quotation request"}
           </p>
         </div>
         {!user && (
-          <Link to="/auth" className="rounded-md border border-primary px-3.5 py-1.5 text-sm font-medium text-primary hover:bg-primary/10">
-            Sign in to Save
+          <Link to="/auth" search={{ redirectTo: "/collection" }} className="rounded-md border border-primary px-3.5 py-1.5 text-sm font-medium text-primary hover:bg-primary/10 transition">
+            Sign in to Save & Push
           </Link>
         )}
       </div>
 
       {/* Locked Status Alert Banner */}
       {collectionData?.is_locked && (
-        <div className="mt-4 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-amber-900 dark:text-amber-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-amber-900 dark:text-amber-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <Lock className="h-5 w-5 text-amber-600 shrink-0" />
             <div>
-              <p className="font-medium text-sm">Request Submitted — Collection Locked</p>
+              <p className="font-medium text-sm">Quotation Submitted — Immutable Record ({collectionData.reference_number})</p>
               <p className="text-xs text-amber-700 dark:text-amber-300">
-                This quotation request was sent to WhatsApp on {new Date(collectionData.submitted_at || collectionData.updated_at).toLocaleDateString()}. It cannot be modified directly.
+                This request was submitted to WhatsApp on {new Date(collectionData.submitted_at || collectionData.updated_at).toLocaleDateString()}. Edits create a new collection version.
               </p>
             </div>
           </div>
@@ -374,22 +483,43 @@ function CollectionPage() {
               className="shrink-0 inline-flex items-center gap-1.5 rounded-lg bg-amber-600 px-3.5 py-1.5 text-xs font-medium text-white hover:bg-amber-700 transition"
             >
               <RefreshCw className={`h-3.5 w-3.5 ${isSubmitting ? "animate-spin" : ""}`} />
-              Create Updated Request
+              Create Updated Request (v{(collectionData.version || 1) + 1})
             </button>
           )}
         </div>
       )}
 
+      {/* Popup Blocker Fallback Banner */}
+      {whatsappFallbackUrl && (
+        <div className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-4 text-emerald-900 dark:text-emerald-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0" />
+            <div>
+              <p className="font-semibold text-sm">Your Quotation Request is Ready!</p>
+              <p className="text-xs text-emerald-700 dark:text-emerald-300">Click below to continue to WhatsApp and launch your pre-formatted quote.</p>
+            </div>
+          </div>
+          <a
+            href={whatsappFallbackUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="shrink-0 inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-700 transition shadow-sm"
+          >
+            <MessageCircle className="h-4 w-4" /> Continue to WhatsApp
+          </a>
+        </div>
+      )}
+
       {/* View Toggles Tab with Heart Icon */}
       {user && (
-        <div className="flex gap-4 border-b border-border pb-2 mt-4 text-xs font-semibold uppercase tracking-wider">
+        <div className="flex gap-4 border-b border-border pb-2 text-xs font-semibold uppercase tracking-wider">
           <button
             onClick={() => setActiveView("collection")}
             className={`pb-1.5 border-b-2 transition ${
               activeView === "collection" ? "border-primary text-primary" : "border-transparent text-muted-foreground"
             }`}
           >
-            My Project Items ({products.length})
+            Selected Products ({products.length})
           </button>
           <button
             onClick={() => setActiveView("favorites")}
@@ -403,14 +533,15 @@ function CollectionPage() {
         </div>
       )}
 
+      {/* 2. SELECTED PRODUCTS LIST (PRIMARY CONTENT FIRST) */}
       {(activeView === "collection" ? products : favoriteProducts).length === 0 ? (
-        <div className="mt-8 rounded-xl border border-dashed border-border p-10 text-center">
+        <div className="rounded-xl border border-dashed border-border p-10 text-center">
           <FileText className="h-10 w-10 text-muted-foreground/40 mx-auto mb-3" />
           <p className="text-sm font-medium text-foreground">
             {activeView === "collection" ? "Your collection is empty." : "You have not favorited any products yet."}
           </p>
           <p className="text-xs text-muted-foreground mt-1 max-w-md mx-auto">
-            Browse our catalogue of premium tiles, stone, and sanitary wares to add products to your project collection.
+            Browse our catalogue of premium tiles, stone, and sanitary wares to select products for your project.
           </p>
           <Link to="/" className="mt-4 inline-block rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90">
             Browse Showroom Catalogue
@@ -418,63 +549,22 @@ function CollectionPage() {
         </div>
       ) : (
         <>
-          {/* COLLECTION SUMMARY HEADER */}
-          <div className="mt-6 rounded-xl border border-border bg-card p-4 sm:p-5 shadow-sm">
-            <h2 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-3">Project Collection Summary</h2>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm">
-              <div className="rounded-lg bg-surface-2/60 p-3 border border-border/50">
-                <span className="text-xs text-muted-foreground block">Selected Products</span>
-                <span className="font-semibold text-lg text-foreground">{summaryMetrics.totalProducts} Products</span>
-              </div>
-              <div className="rounded-lg bg-surface-2/60 p-3 border border-border/50">
-                <span className="text-xs text-muted-foreground block">Est. Total Quantity</span>
-                <span className="font-semibold text-lg text-primary">{summaryMetrics.totalQtyString}</span>
-              </div>
-              <div className="rounded-lg bg-surface-2/60 p-3 border border-border/50">
-                <span className="text-xs text-muted-foreground block">Est. Total Collection Value</span>
-                <span className="font-semibold text-lg text-foreground">{summaryMetrics.totalPriceFormatted}</span>
-              </div>
-            </div>
-
-            {/* Action Bar */}
-            <div className="mt-5 flex flex-wrap items-center gap-3">
-              {collectionData?.is_locked ? (
-                <button
-                  onClick={handleCreateUpdatedRequest}
-                  disabled={isSubmitting}
-                  className="inline-flex items-center gap-2 rounded-lg bg-amber-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-amber-700 transition"
-                >
-                  <RefreshCw className={`h-4 w-4 ${isSubmitting ? "animate-spin" : ""}`} />
-                  Create Updated Request
-                </button>
-              ) : (
-                <button
-                  onClick={pushToWhatsApp}
-                  disabled={isSubmitting}
-                  className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 transition shadow-sm"
-                >
-                  <MessageCircle className="h-4 w-4" /> Push to WhatsApp
-                </button>
-              )}
-
-              {activeView === "collection" && (
-                <button
-                  onClick={shareLink}
-                  className="inline-flex items-center gap-2 rounded-lg border border-border bg-background px-4 py-2.5 text-sm font-medium hover:bg-surface-2 transition"
-                >
-                  <Share2 className="h-4 w-4" /> Share Link
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* ITEM LIST WITH COLLAPSIBLE PROJECT REQUIREMENTS */}
-          <ul className="mt-6 space-y-3">
+          <ul className="space-y-3">
             {(activeView === "collection" ? products : favoriteProducts).map((p) => {
               const req = requirementsMap[p.id] || {};
               const detectedUnit = detectProductUnit(p);
               const isExpanded = Boolean(expandedMap[p.id]);
               const isLocked = Boolean(collectionData?.is_locked);
+
+              // Collapsed Preview Text String
+              const previewParts = [
+                `Quantity: ${req.quantity || 1} ${req.unit || detectedUnit}`,
+                req.installation_location ? `Location: ${req.installation_location}` : null,
+                req.delivery_preference ? `Delivery: ${req.delivery_preference}` : null,
+                req.installation_required && req.installation_required !== "Not Sure" ? `Install: ${req.installation_required}` : null,
+                req.project_notes ? `Notes: ${req.project_notes}` : null
+              ].filter(Boolean);
+              const collapsedPreview = previewParts.join(" | ");
 
               return (
                 <li key={p.id} className="rounded-xl border border-border bg-card overflow-hidden transition shadow-sm hover:border-primary/40">
@@ -492,6 +582,13 @@ function CollectionPage() {
                         <span>Code: {p.code}</span>
                         {p.brand && <span>• {p.brand}</span>}
                       </div>
+
+                      {/* Collapsed Preview Badge Text */}
+                      {!isExpanded && (
+                        <p className="text-xs text-primary/90 font-medium mt-1 truncate">
+                          {collapsedPreview}
+                        </p>
+                      )}
                     </div>
 
                     {/* Price & Quantity Summary Badge */}
@@ -505,10 +602,10 @@ function CollectionPage() {
                         </span>
                         <button
                           onClick={() => toggleExpand(p.id)}
-                          className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-primary px-2 py-1 rounded-md hover:bg-surface-2 transition"
+                          className="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:text-primary/80 px-2 py-1 rounded-md hover:bg-surface-2 transition"
                         >
-                          {isExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-                          <span className="hidden sm:inline">{isExpanded ? "Hide Details" : "Project Requirements"}</span>
+                          {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                          <span>{isExpanded ? "Hide Requirements" : "▼ Project Requirements"}</span>
                         </button>
                       </div>
                     </div>
@@ -524,11 +621,13 @@ function CollectionPage() {
                     )}
                   </div>
 
-                  {/* Collapsible Project Requirement Form Panel */}
+                  {/* Expandable Project Requirement Form Panel (Auto-Saves on Blur/Change) */}
                   {isExpanded && (
                     <div className="border-t border-border/60 bg-surface-2/40 p-4 sm:p-5 text-sm space-y-4">
                       <div className="flex items-center justify-between">
-                        <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Project Requirements & Specifications</h4>
+                        <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                          <FileText className="h-3.5 w-3.5 text-primary" /> Project Specifications & Requirements
+                        </h4>
                         <span className="text-xs text-muted-foreground">
                           Auto-Detected Unit: <strong className="text-foreground">{detectedUnit}</strong>
                         </span>
@@ -559,7 +658,7 @@ function CollectionPage() {
                           <input
                             type="text"
                             disabled={isLocked}
-                            placeholder="e.g. Living Room Floor, Master Bath"
+                            placeholder="e.g. Kitchen Floor, Master Bath"
                             value={req.installation_location || ""}
                             onChange={(e) => handleRequirementChange(p.id, "installation_location", e.target.value)}
                             className="w-full rounded-lg border border-border bg-background px-3 py-1.5 text-sm focus:ring-2 focus:ring-primary focus:outline-none disabled:opacity-60"
@@ -585,26 +684,26 @@ function CollectionPage() {
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                         {/* Installation Required */}
                         <div>
-                          <label className="block text-xs font-medium text-muted-foreground mb-1">Installation Required?</label>
+                          <label className="block text-xs font-medium text-muted-foreground mb-1">Installation Service Required?</label>
                           <select
                             disabled={isLocked}
                             value={req.installation_required || "Not Sure"}
                             onChange={(e) => handleRequirementChange(p.id, "installation_required", e.target.value)}
                             className="w-full rounded-lg border border-border bg-background px-3 py-1.5 text-sm focus:ring-2 focus:ring-primary focus:outline-none disabled:opacity-60"
                           >
-                            <option value="Not Sure">Not Sure (Need Advice)</option>
-                            <option value="Yes">Yes (Require Installation Service)</option>
-                            <option value="No">No (Supply Only)</option>
+                            <option value="Not Sure">Not Sure (Need Technical Advice)</option>
+                            <option value="Yes">Yes (Require Installation Team)</option>
+                            <option value="No">No (Supply Materials Only)</option>
                           </select>
                         </div>
 
                         {/* Project Notes */}
                         <div className="sm:col-span-2">
-                          <label className="block text-xs font-medium text-muted-foreground mb-1">Specific Requirements & Notes</label>
+                          <label className="block text-xs font-medium text-muted-foreground mb-1">Specific Notes & Allowances</label>
                           <input
                             type="text"
                             disabled={isLocked}
-                            placeholder="e.g. Polished finish preferred, include 10% extra for waste margin"
+                            placeholder="e.g. Polished finish preferred, 10% wastage allowance"
                             value={req.project_notes || ""}
                             onChange={(e) => handleRequirementChange(p.id, "project_notes", e.target.value)}
                             className="w-full rounded-lg border border-border bg-background px-3 py-1.5 text-sm focus:ring-2 focus:ring-primary focus:outline-none disabled:opacity-60"
@@ -617,9 +716,121 @@ function CollectionPage() {
               );
             })}
           </ul>
+
+          {/* 3. COMPREHENSIVE COLLECTION SUMMARY (REVIEW PHASE BEFORE SUBMISSION) */}
+          <div className="rounded-xl border border-border bg-card p-5 shadow-sm space-y-4">
+            <div className="flex items-center justify-between border-b border-border/60 pb-3">
+              <h2 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Project Collection Summary Review</h2>
+              {collectionData?.reference_number && (
+                <span className="text-xs font-mono font-medium text-muted-foreground">Ref: {collectionData.reference_number}</span>
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-sm">
+              <div className="rounded-lg bg-surface-2/60 p-3 border border-border/50">
+                <span className="text-[11px] text-muted-foreground block">Selected Products</span>
+                <span className="font-semibold text-base text-foreground">{summaryMetrics.totalProducts} Items</span>
+              </div>
+              <div className="rounded-lg bg-surface-2/60 p-3 border border-border/50">
+                <span className="text-[11px] text-muted-foreground block">Est. Total Quantity</span>
+                <span className="font-semibold text-base text-primary">{summaryMetrics.totalQtyString}</span>
+              </div>
+              <div className="rounded-lg bg-surface-2/60 p-3 border border-border/50">
+                <span className="text-[11px] text-muted-foreground block">Est. Collection Value</span>
+                <span className="font-semibold text-base text-foreground">{summaryMetrics.totalPriceFormatted}</span>
+              </div>
+              <div className="rounded-lg bg-surface-2/60 p-3 border border-border/50">
+                <span className="text-[11px] text-muted-foreground block">Site Delivery Items</span>
+                <span className="font-semibold text-base text-foreground">{summaryMetrics.deliveryItemsCount} Items</span>
+              </div>
+              <div className="col-span-2 sm:col-span-1 rounded-lg bg-surface-2/60 p-3 border border-border/50">
+                <span className="text-[11px] text-muted-foreground block">Installer Service</span>
+                <span className="font-semibold text-base text-foreground">
+                  {summaryMetrics.installerRequestedCount > 0 ? `${summaryMetrics.installerRequestedCount} Requested` : "None"}
+                </span>
+              </div>
+            </div>
+
+            {/* 4 & 5. ACTION BUTTONS: PUSH TO WHATSAPP & SHARE COLLECTION */}
+            <div className="pt-2 flex flex-wrap items-center gap-3">
+              {collectionData?.is_locked ? (
+                <button
+                  onClick={handleCreateUpdatedRequest}
+                  disabled={isSubmitting}
+                  className="inline-flex items-center gap-2 rounded-lg bg-amber-600 px-6 py-3 text-sm font-semibold text-white hover:bg-amber-700 transition shadow-sm"
+                >
+                  <RefreshCw className={`h-4 w-4 ${isSubmitting ? "animate-spin" : ""}`} />
+                  Create Updated Request (v{(collectionData.version || 1) + 1})
+                </button>
+              ) : (
+                <button
+                  onClick={pushToWhatsApp}
+                  disabled={isSubmitting}
+                  className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-6 py-3 text-sm font-semibold text-white hover:bg-emerald-700 transition shadow-sm"
+                >
+                  <MessageCircle className="h-4 w-4" /> Push to WhatsApp
+                </button>
+              )}
+
+              {activeView === "collection" && (
+                <button
+                  onClick={shareLink}
+                  className="inline-flex items-center gap-2 rounded-lg border border-border bg-background px-4 py-3 text-sm font-medium hover:bg-surface-2 transition"
+                >
+                  <Share2 className="h-4 w-4" /> Share Link
+                </button>
+              )}
+            </div>
+          </div>
         </>
+      )}
+
+      {/* PHONE NUMBER COLLECTION MODAL */}
+      {showPhoneModal && (
+        <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-md rounded-xl border border-border bg-card p-6 shadow-2xl space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="grid h-10 w-10 place-items-center rounded-full bg-primary/10 text-primary shrink-0">
+                <Phone className="h-5 w-5" />
+              </div>
+              <div>
+                <h3 className="font-display text-lg font-semibold">Help us contact you about your quotation</h3>
+                <p className="text-xs text-muted-foreground">Please enter your primary phone number to complete your WhatsApp submission.</p>
+              </div>
+            </div>
+
+            <form onSubmit={handlePhoneSubmit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">Phone Number</label>
+                <input
+                  type="tel"
+                  required
+                  placeholder="e.g. +234 801 234 5678"
+                  value={phoneInput}
+                  onChange={(e) => setPhoneInput(e.target.value)}
+                  className="w-full rounded-lg border border-border bg-background px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-primary focus:outline-none"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowPhoneModal(false)}
+                  className="rounded-lg border border-border px-4 py-2 text-xs font-medium hover:bg-surface-2 transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="rounded-lg bg-emerald-600 px-5 py-2 text-xs font-semibold text-white hover:bg-emerald-700 transition"
+                >
+                  Save & Continue to WhatsApp
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
     </div>
   );
 }
-

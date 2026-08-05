@@ -106,8 +106,13 @@ function SharedCollection() {
     <div className="container-app py-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border pb-4">
         <div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <h1 className="font-display text-2xl font-semibold">{collection?.name || "Shared Project Collection"}</h1>
+            {collection?.reference_number && (
+              <span className="rounded-md bg-card text-foreground text-xs font-mono font-bold px-2.5 py-1 border border-border">
+                {collection.reference_number}
+              </span>
+            )}
             {collection?.version && collection.version > 1 && (
               <span className="rounded-full bg-primary/10 text-primary text-xs font-semibold px-2.5 py-0.5 border border-primary/20">
                 v{collection.version}

@@ -482,6 +482,7 @@ export type Database = {
           name: string
           parent_collection_id: string | null
           project_name: string | null
+          reference_number: string | null
           status: string | null
           submitted_at: string | null
           updated_at: string
@@ -499,6 +500,7 @@ export type Database = {
           name: string
           parent_collection_id?: string | null
           project_name?: string | null
+          reference_number?: string | null
           status?: string | null
           submitted_at?: string | null
           updated_at?: string
@@ -516,6 +518,7 @@ export type Database = {
           name?: string
           parent_collection_id?: string | null
           project_name?: string | null
+          reference_number?: string | null
           status?: string | null
           submitted_at?: string | null
           updated_at?: string
@@ -1759,6 +1762,9 @@ export type Database = {
           email: string | null
           full_name: string | null
           id: string
+          last_collection_submitted_at: string | null
+          phone_number: string | null
+          preferred_contact_method: string | null
           tags: string[]
           vip_status: boolean
         }
@@ -1768,6 +1774,9 @@ export type Database = {
           email?: string | null
           full_name?: string | null
           id?: string
+          last_collection_submitted_at?: string | null
+          phone_number?: string | null
+          preferred_contact_method?: string | null
           tags?: string[]
           vip_status?: boolean
         }
@@ -1777,6 +1786,9 @@ export type Database = {
           email?: string | null
           full_name?: string | null
           id?: string
+          last_collection_submitted_at?: string | null
+          phone_number?: string | null
+          preferred_contact_method?: string | null
           tags?: string[]
           vip_status?: boolean
         }
