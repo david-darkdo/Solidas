@@ -1,63 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { fetchProductsByIds } from "@/lib/collection";
-import { useAppSettings, waLink } from "@/lib/settings";
-import { MessageCircle } from "lucide-react";
-
-export const Route = createFileRoute("/collection/$id")({
-  loader: async ({ params }) => {
-    let imageUrl = "";
-    try {
-      const { data: items } = await supabase
-        .from("collection_items")
-        .select("product_id")
-        .eq("collection_id", params.id)
-        .limit(1);
-      
-      if (items && items.length > 0) {
-        const { data: prod } = await supabase
-          .from("products")
-          .select("generated_studio_image, image_url")
-          .eq("id", items[0].product_id)
-          .maybeSingle();
-        if (prod) {
-          imageUrl = prod.generated_studio_image || prod.image_url || "";
-        }
-      }
-    } catch (e) {
-      // swallow
-    }
-    return { imageUrl };
-  },
-  head: ({ loaderData }) => {
-    const title = "Shared Collection — Enreach Concepts";
-    const desc = "Check out this curated building materials collection on Enreach Concepts.";
-    const img = (loaderData as any)?.imageUrl || "https://enreachconcepts.com/logo.png";
-    return {
-      meta: [
-        { title: title },
-        { name: "description", content: desc },
-        { property: "og:type", content: "website" },
-        { property: "og:title", content: title },
-        { property: "og:description", content: desc },
-        { property: "og:image", content: img },
-        { name: "twitter:card", content: "summary_large_image" },
-        { name: "twitter:title", content: title },
-        { name: "twitter:description", content: desc },
-        { name: "twitter:image", content: img }
-      ]
-    };
-  },
-  component: SharedCollection,
-});
-
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
 import { fetchProductsByIds, detectProductUnit } from "@/lib/collection";
 import { useAppSettings, waLink } from "@/lib/settings";
-import { MessageCircle, FileText, CheckCircle2, Lock } from "lucide-react";
+import { MessageCircle, Lock } from "lucide-react";
 import { publicImageUrl } from "@/components/ImageUploader";
 
 export const Route = createFileRoute("/collection/$id")({
@@ -228,4 +174,3 @@ function SharedCollection() {
     </div>
   );
 }
-
