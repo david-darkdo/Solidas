@@ -167,20 +167,19 @@ export function getCachedUserCollectionItems(userId: string): { collection_id: s
   }
 }
 
-/** Guaranteed active collection generator (Schema-Safe against PGRST100 & Filters Submitted) */
+/** Guaranteed active collection generator (Schema-Safe strictly standard columns) */
 export async function ensureUserCollection(userId: string): Promise<string> {
   if (!userId) return "";
   try {
-    const { data: existing } = await supabase
+    const { data: existing, error } = await supabase
       .from("collections")
-      .select("id, name, user_id, created_at, status")
+      .select("id, name, user_id, created_at")
       .eq("user_id", userId)
-      .neq("status", "Submitted")
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
 
-    if (existing?.id) return existing.id;
+    if (!error && existing?.id) return existing.id;
   } catch (err) {
     console.warn("Failed selecting existing collection:", err);
   }
@@ -208,16 +207,14 @@ export async function ensureUserCollection(userId: string): Promise<string> {
 
 export async function getUserCollectionItems(userId: string) {
   const cacheKey = `${CACHED_ITEMS_KEY_PREFIX}${userId}`;
+  const cached = getCachedUserCollectionItems(userId);
 
   if (typeof window !== "undefined" && !navigator.onLine) {
-    try {
-      const cached = JSON.parse(window.localStorage.getItem(cacheKey) || "null");
-      if (cached) return cached;
-    } catch {}
+    return cached;
   }
 
   const collection_id = await ensureUserCollection(userId);
-  if (!collection_id) return { collection_id: "", items: [] };
+  if (!collection_id) return cached;
 
   const { data, error } = await supabase
     .from("collection_items")
@@ -227,10 +224,20 @@ export async function getUserCollectionItems(userId: string) {
 
   if (error) {
     console.error("Error fetching collection_items:", error);
-    return { collection_id, items: [] };
+    return cached;
   }
 
-  const result = { collection_id, items: data ?? [] };
+  const dbItems = data ?? [];
+  const mergedMap = new Map<string, any>();
+  dbItems.forEach((i: any) => mergedMap.set(i.product_id, i));
+  (cached.items || []).forEach((i: any) => {
+    if (!mergedMap.has(i.product_id)) {
+      mergedMap.set(i.product_id, i);
+    }
+  });
+
+  const mergedItems = Array.from(mergedMap.values());
+  const result = { collection_id, items: mergedItems };
   if (typeof window !== "undefined") {
     window.localStorage.setItem(cacheKey, JSON.stringify(result));
   }
@@ -260,7 +267,16 @@ export async function getBatchCollectionWorkspaceData(userId: string) {
       : Promise.resolve({ data: null }),
   ]);
 
-  const items = itemsRes.data ?? [];
+  const dbItems = itemsRes.data ?? [];
+  const mergedMap = new Map<string, any>();
+  dbItems.forEach((i: any) => mergedMap.set(i.product_id, i));
+  (cached.items || []).forEach((i: any) => {
+    if (!mergedMap.has(i.product_id)) {
+      mergedMap.set(i.product_id, i);
+    }
+  });
+
+  const items = Array.from(mergedMap.values());
   const productIds = items.map((i: any) => i.product_id);
   const products = productIds.length > 0 ? await fetchProductsByIds(productIds) : [];
 
