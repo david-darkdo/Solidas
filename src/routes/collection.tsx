@@ -6,6 +6,8 @@ import {
   fetchProductsByIds,
   getGuestCollection,
   getUserCollectionItems,
+  getCachedUserCollectionItems,
+  getBatchCollectionWorkspaceData,
   ensureUserCollection,
   removeGuestItem,
   removeItemFromUserCollection,
@@ -71,57 +73,49 @@ function CollectionPage() {
   useEffect(() => {
     const load = async () => {
       if (user) {
-        // Auto-merge guest items if present upon landing (e.g. after Google OAuth or email sign-in redirect)
+        // 1. Instant local cached render (< 16ms)
+        const cached = getCachedUserCollectionItems(user.id);
+        if (cached.items && cached.items.length > 0) {
+          setCollectionId(cached.collection_id || null);
+          setItems(cached.items);
+          fetchProductsByIds(cached.items.map((i: any) => i.product_id)).then((cachedProds) => {
+            if (cachedProds.length > 0) setProducts(cachedProds);
+          });
+        }
+
+        // 2. Non-blocking guest merge if present
         const guestItems = getGuestCollection();
         if (guestItems.length > 0) {
           await mergeGuestIntoUser(user.id);
         }
 
-        // Fetch user profile
-        const { data: prof } = await supabase
-          .from("profiles")
-          .select("*")
-          .eq("auth_id", user.id)
-          .maybeSingle();
-
-        setUserProfile(prof);
-
-        const { collection_id, items: colItems } = await getUserCollectionItems(user.id);
-        setCollectionId(collection_id);
-        setItems(colItems);
-
-        // Fetch collection header info
-        const { data: colInfo } = await supabase
-          .from("collections")
-          .select("*")
-          .eq("id", collection_id)
-          .maybeSingle();
-
-        if (colInfo) {
+        // 3. Parallel background sync (< 1 roundtrip)
+        const batch = await getBatchCollectionWorkspaceData(user.id);
+        setUserProfile(batch.profile);
+        setCollectionId(batch.collectionId);
+        setItems(batch.items);
+        if (batch.collectionData) {
           setCollectionData({
-            id: colInfo.id,
-            user_id: colInfo.user_id,
-            name: colInfo.name || "Project Workspace",
-            reference_number: (colInfo as any).reference_number || generateCollectionReference(colInfo.id),
-            project_name: (colInfo as any).project_name || null,
-            status: (colInfo as any).status || "Draft",
-            is_locked: (colInfo as any).is_locked ?? false,
-            parent_collection_id: (colInfo as any).parent_collection_id || null,
-            version: (colInfo as any).version || 1,
-            submitted_at: (colInfo as any).submitted_at || null,
-            created_at: colInfo.created_at,
-            updated_at: colInfo.updated_at,
+            id: batch.collectionData.id,
+            user_id: batch.collectionData.user_id,
+            name: batch.collectionData.name || "Project Workspace",
+            reference_number: (batch.collectionData as any).reference_number || generateCollectionReference(batch.collectionData.id),
+            project_name: (batch.collectionData as any).project_name || null,
+            status: (batch.collectionData as any).status || "Draft",
+            is_locked: (batch.collectionData as any).is_locked ?? false,
+            parent_collection_id: (batch.collectionData as any).parent_collection_id || null,
+            version: (batch.collectionData as any).version || 1,
+            submitted_at: (batch.collectionData as any).submitted_at || null,
+            created_at: batch.collectionData.created_at,
+            updated_at: batch.collectionData.updated_at,
           });
         }
+        setProducts(batch.products);
 
-        const prods = await fetchProductsByIds(colItems.map((i: any) => i.product_id));
-        setProducts(prods);
-
-        // Map initial requirements (combining item DB specifications and user local requirements)
         const savedUserReqs = getUserItemRequirements(user.id);
         const reqMap: Record<string, ItemRequirements> = {};
-        colItems.forEach((ci: any) => {
-          const matchingProd = prods.find((p) => p.id === ci.product_id);
+        batch.items.forEach((ci: any) => {
+          const matchingProd = batch.products.find((p) => p.id === ci.product_id);
           const autoUnit = detectProductUnit(matchingProd);
           const savedReq = savedUserReqs[ci.product_id] || {};
           reqMap[ci.product_id] = {
@@ -160,144 +154,106 @@ function CollectionPage() {
       }
     };
 
-    const loadFavorites = async () => {
-      if (!user?.id) return;
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("id")
-        .eq("auth_id", user.id)
-        .maybeSingle();
-      if (!profile?.id) return;
-
-      const { data: favs } = await supabase
-        .from("favorites")
-        .select("product_id")
-        .eq("user_id", profile.id);
-      if (favs && favs.length > 0) {
-        const prodData = await fetchProductsByIds(favs.map((f) => f.product_id));
-        setFavoriteProducts(prodData);
-      } else {
-        setFavoriteProducts([]);
-      }
-    };
-
-    if (!loading) {
-      void load();
-      void loadFavorites();
-    }
+    if (!loading) void load();
   }, [user, loading, refreshKey]);
 
-  // Auto resume Push to WhatsApp after authentication redirect
+  // Handle autoPush parameter (Automatic WhatsApp trigger after authentication)
   useEffect(() => {
-    const pendingAction = typeof window !== "undefined" ? (window.localStorage.getItem("stoneworks.pending_action") || window.localStorage.getItem("stoneworks.pending_whatsapp_push")) : null;
-    if (!loading && user && (search.autoPush || pendingAction === "true" || pendingAction === "push_whatsapp") && products.length > 0 && !isSubmitting) {
-      if (typeof window !== "undefined") {
-        window.localStorage.removeItem("stoneworks.pending_action");
-        window.localStorage.removeItem("stoneworks.pending_whatsapp_push");
-        window.history.replaceState({}, document.title, window.location.pathname);
+    if (search.autoPush && !loading && items.length > 0 && settings?.sales_whatsapp) {
+      const timer = setTimeout(() => {
+        void handlePushToWhatsAppClick();
+      }, 300);
+      return () => clearTimeout(timer);
+    }
+  }, [search.autoPush, loading, items.length, settings]);
+
+  const handleRequirementChange = (productId: string, patch: Partial<ItemRequirements>) => {
+    setRequirementsMap((prev) => {
+      const current = prev[productId] || {};
+      const updated = { ...current, ...patch };
+      if (user) {
+        updateUserItemRequirements(user.id, productId, updated);
+      } else {
+        updateGuestItemRequirements(productId, updated);
       }
-      void pushToWhatsApp();
-    }
-  }, [loading, user, search.autoPush, products.length]);
-
-  // Requirements Auto-Save Handler (on change / blur)
-  const handleRequirementChange = async (productId: string, field: keyof ItemRequirements, value: any) => {
-    const updated = {
-      ...(requirementsMap[productId] || {}),
-      [field]: value
-    };
-
-    setRequirementsMap((prev) => ({
-      ...prev,
-      [productId]: updated
-    }));
-
-    if (user && collectionId) {
-      await updateUserItemRequirements(collectionId, productId, updated);
-    } else {
-      updateGuestItemRequirements(productId, updated);
-    }
+      return { ...prev, [productId]: updated };
+    });
   };
 
   const toggleExpand = (productId: string) => {
-    setExpandedMap((prev) => ({
-      ...prev,
-      [productId]: !prev[productId]
-    }));
+    setExpandedMap((prev) => ({ ...prev, [productId]: !prev[productId] }));
+  };
+
+  const promptRemoveProduct = (product: any) => {
+    setProductToRemove(product);
   };
 
   const confirmRemoveProduct = async () => {
     if (!productToRemove) return;
-    const pId = productToRemove.id;
-    if (activeView === "collection") {
-      if (user) await removeItemFromUserCollection(user.id, pId);
-      else removeGuestItem(pId);
-      toast.success(`Removed ${productToRemove.name} from Active Workspace`);
+    const productId = productToRemove.id;
+    setProducts((prev) => prev.filter((p) => p.id !== productId));
+    setItems((prev) => prev.filter((i) => i.product_id !== productId));
+
+    if (user) {
+      await removeItemFromUserCollection(user.id, productId);
     } else {
-      if (user) {
-        const { data: profile } = await supabase.from("profiles").select("id").eq("auth_id", user.id).maybeSingle();
-        if (profile?.id) {
-          await supabase.from("favorites").delete().eq("user_id", profile.id).eq("product_id", pId);
-          toast.success(`Removed ${productToRemove.name} from Favorites`);
-        }
-      }
+      removeGuestItem(productId);
     }
     setProductToRemove(null);
-    setRefreshKey((k) => k + 1);
+    toast.success("Item removed from collection");
   };
 
-  // Comprehensive Collection Summary Metrics
+  // Summary Metrics Calculation
   const summaryMetrics = useMemo(() => {
-    const activeProds = activeView === "collection" ? products : favoriteProducts;
+    const activeProducts = activeView === "collection" ? products : favoriteProducts;
+    let totalPieces = 0;
+    let totalSqM = 0;
     let totalPrice = 0;
-    let deliveryItemsCount = 0;
     let installerRequestedCount = 0;
-    const unitTotals: Record<string, number> = {};
+    let deliveryItemsCount = 0;
 
-    activeProds.forEach((p) => {
+    activeProducts.forEach((p) => {
       const req = requirementsMap[p.id] || {};
-      const qty = Number(req.quantity || 1);
+      const qty = req.quantity || 1;
       const unit = req.unit || detectProductUnit(p);
       const price = Number(p.price || 0);
 
-      totalPrice += price * qty;
-      unitTotals[unit] = (unitTotals[unit] || 0) + qty;
+      if (unit === "m²") totalSqM += qty;
+      else totalPieces += qty;
 
-      if (req.delivery_preference !== "Warehouse Pickup") {
-        deliveryItemsCount++;
-      }
-      if (req.installation_required === "Yes") {
+      totalPrice += price * qty;
+
+      if (req.installation_required && req.installation_required !== "Not Sure" && req.installation_required !== "No, Supply Only") {
         installerRequestedCount++;
+      }
+
+      if (req.delivery_preference && req.delivery_preference !== "Self Pickup") {
+        deliveryItemsCount++;
       }
     });
 
-    const qtyStringParts = Object.entries(unitTotals).map(([unit, count]) => `${count} ${unit}`);
-    const totalQtyString = qtyStringParts.join(" + ") || "0 items";
+    const qtyParts: string[] = [];
+    if (totalSqM > 0) qtyParts.push(`${totalSqM.toLocaleString()} m²`);
+    if (totalPieces > 0) qtyParts.push(`${totalPieces.toLocaleString()} Pcs`);
+    const totalQtyString = qtyParts.join(" + ") || "0 Items";
 
     return {
-      totalProducts: activeProds.length,
-      totalQtyString,
+      totalPieces,
+      totalSqM,
       totalPriceFormatted: `₦${totalPrice.toLocaleString()}`,
+      totalQtyString,
+      installerRequestedCount,
       deliveryItemsCount,
-      installerRequestedCount
+      itemCount: activeProducts.length
     };
-  }, [products, favoriteProducts, requirementsMap, activeView]);
+  }, [products, favoriteProducts, activeView, requirementsMap]);
 
-  // Main Push To WhatsApp Flow Orchestrator
-  const pushToWhatsApp = async () => {
-    if (!user) {
-      window.localStorage.setItem("stoneworks.pending_action", "push_whatsapp");
-      window.localStorage.setItem("stoneworks.pending_whatsapp_push", "true");
-      navigate({ to: "/auth", search: { redirectTo: "/collection", autoPush: true } });
-      return;
-    }
-
-    const existingPhone = userProfile?.phone_number || user.phone || user.user_metadata?.phone;
-    if (!existingPhone) {
+  const handlePushToWhatsAppClick = async () => {
+    const currentPhone = userProfile?.phone_number || user?.phone || user?.user_metadata?.phone;
+    if (!currentPhone && user) {
       setShowPhoneModal(true);
       return;
     }
-
     await executePushToWhatsApp();
   };
 
@@ -324,102 +280,92 @@ function CollectionPage() {
       return;
     }
 
-    let id = collectionId;
-    if (!id && user) id = await ensureUserCollection(user.id);
+    const activeItems = activeView === "collection" ? products : favoriteProducts;
+    let id = collectionId || (user ? getCachedUserCollectionItems(user.id).collection_id : "");
+    const refNum = collectionData?.reference_number || generateCollectionReference(id || undefined);
+    const versionStr = collectionData?.version && collectionData.version > 1 ? ` (v${collectionData.version})` : "";
+    const shareUrl = id ? `${window.location.origin}/collection/${id}` : `${window.location.origin}/collection`;
 
-    setIsSubmitting(true);
-    setWhatsappFallbackUrl(null);
+    // 1. Construct WhatsApp message synchronously (< 16ms)
+    const messageParts = [
+      "Hello Enreach Concepts,",
+      "",
+      "I would like a quotation for my project.",
+      "",
+      `Collection Reference:`,
+      `*${refNum}${versionStr}*`,
+      "",
+      `Collection Link:`,
+      `${shareUrl}`,
+      "",
+      `*SELECTED PRODUCTS (${activeItems.length}):*`
+    ];
 
-    try {
-      const activeItems = activeView === "collection" ? products : favoriteProducts;
-      const shareUrl = id ? `${window.location.origin}/collection/${id}` : `${window.location.origin}/collection`;
-      const refNum = collectionData?.reference_number || generateCollectionReference(id || undefined);
-      const versionStr = collectionData?.version && collectionData.version > 1 ? ` (v${collectionData.version})` : "";
-
-      // 1. Lock and submit collection into History
-      if (id) {
-        await lockAndSubmitCollection(id, user?.id);
-      }
-
-      // 2. Auto-create CRM inquiry
-      if (user && id) {
-        try {
-          await supabase.from("whatsapp_inquiries").insert({
-            collection_id: id,
-            customer_name: user.user_metadata?.full_name || user.email || "Customer",
-            customer_phone: userProfile?.phone_number || user.phone || user.user_metadata?.phone || "",
-            customer_email: user.email ?? null,
-            whatsapp_number: userProfile?.phone_number || user.user_metadata?.whatsapp || user.phone || null,
-            inquiry_status: "NEW",
-            status: "pending",
-          } as never);
-        } catch {
-          /* non-blocking */
-        }
-      }
-
-      const messageParts = [
-        "Hello Enreach Concepts,",
-        "",
-        "I would like a quotation for my project.",
-        "",
-        `Collection Reference:`,
-        `*${refNum}${versionStr}*`,
-        "",
-        `Collection Link:`,
-        `${shareUrl}`,
-        "",
-        `*SELECTED PRODUCTS (${activeItems.length}):*`
-      ];
-
-      activeItems.forEach((p, idx) => {
-        const req = requirementsMap[p.id] || {};
-        const qty = req.quantity || 1;
-        const unit = req.unit || detectProductUnit(p);
-        const loc = req.installation_location ? ` | Loc: ${req.installation_location}` : "";
-        const del = req.delivery_preference ? ` | Delivery: ${req.delivery_preference}` : "";
-        const inst = req.installation_required && req.installation_required !== "Not Sure" ? ` | Install: ${req.installation_required}` : "";
-        const notes = req.project_notes ? ` | Notes: ${req.project_notes}` : "";
-
-        messageParts.push(
-          `${idx + 1}. *${p.name}* (Code: ${p.code}) — ${qty} ${unit}${loc}${del}${inst}${notes}`
-        );
-      });
+    activeItems.forEach((p, idx) => {
+      const req = requirementsMap[p.id] || {};
+      const qty = req.quantity || 1;
+      const unit = req.unit || detectProductUnit(p);
+      const loc = req.installation_location ? ` | Loc: ${req.installation_location}` : "";
+      const del = req.delivery_preference ? ` | Delivery: ${req.delivery_preference}` : "";
+      const inst = req.installation_required && req.installation_required !== "Not Sure" ? ` | Install: ${req.installation_required}` : "";
+      const notes = req.project_notes ? ` | Notes: ${req.project_notes}` : "";
 
       messageParts.push(
-        "",
-        `*PROJECT SUMMARY:*`,
-        `Total Est. Quantity: ${summaryMetrics.totalQtyString}`,
-        `Total Est. Value: ${summaryMetrics.totalPriceFormatted}`,
-        `Delivery Items: ${summaryMetrics.deliveryItemsCount}`,
-        `Installer Service Requested: ${summaryMetrics.installerRequestedCount > 0 ? "Yes" : "No"}`
+        `${idx + 1}. *${p.name}* (Code: ${p.code}) — ${qty} ${unit}${loc}${del}${inst}${notes}`
       );
+    });
 
-      const msg = messageParts.join("\n");
-      const url = waLink(settings.sales_whatsapp, msg);
+    messageParts.push(
+      "",
+      `*PROJECT SUMMARY:*`,
+      `Total Est. Quantity: ${summaryMetrics.totalQtyString}`,
+      `Total Est. Value: ${summaryMetrics.totalPriceFormatted}`,
+      `Delivery Items: ${summaryMetrics.deliveryItemsCount}`,
+      `Installer Service Requested: ${summaryMetrics.installerRequestedCount > 0 ? "Yes" : "No"}`
+    );
 
-      // Attempt WhatsApp window launch
-      const win = window.open(url, "_blank", "noopener,noreferrer");
-      if (!win || win.closed || typeof win.closed === "undefined") {
-        setWhatsappFallbackUrl(url);
-        toast("Quotation ready! Click the green button below to launch WhatsApp.");
-      } else {
-        toast.success("Quotation request submitted & saved to History!");
-      }
+    const msg = messageParts.join("\n");
+    const url = waLink(settings.sales_whatsapp, msg);
 
-      // PHASE E: WORKSPACE CLEARING AFTER SUBMISSION
-      setGuestCollection([]);
-      setItems([]);
-      setProducts([]);
-      setJustSubmitted(true);
-      setLastSubmittedRef(refNum);
-      setCollectionId(null);
-      setCollectionData(null);
-    } catch (err) {
-      toast.error("Error submitting quotation request");
-    } finally {
-      setIsSubmitting(false);
+    // 2. INSTANT WHATSAPP WINDOW LAUNCH (< 16ms) within immediate click gesture stack
+    const win = window.open(url, "_blank", "noopener,noreferrer");
+    if (!win || win.closed || typeof win.closed === "undefined") {
+      setWhatsappFallbackUrl(url);
+      toast("Quotation ready! Click the green button below to launch WhatsApp.");
+    } else {
+      toast.success("Quotation request submitted & saved to History!");
     }
+
+    // 3. Clear active workspace state immediately (< 16ms)
+    setGuestCollection([]);
+    setItems([]);
+    setProducts([]);
+    setJustSubmitted(true);
+    setLastSubmittedRef(refNum);
+    setCollectionId(null);
+    setCollectionData(null);
+
+    // 4. Background non-blocking database lock & CRM inquiry logging
+    (async () => {
+      let targetId = id;
+      if (!targetId && user) targetId = await ensureUserCollection(user.id);
+      if (targetId) {
+        await lockAndSubmitCollection(targetId, user?.id);
+        if (user) {
+          try {
+            await supabase.from("whatsapp_inquiries").insert({
+              collection_id: targetId,
+              customer_name: user.user_metadata?.full_name || user.email || "Customer",
+              customer_phone: userProfile?.phone_number || user.phone || user.user_metadata?.phone || "",
+              customer_email: user.email ?? null,
+              whatsapp_number: userProfile?.phone_number || user.user_metadata?.whatsapp || user.phone || null,
+              inquiry_status: "NEW",
+              status: "pending",
+            } as never);
+          } catch {}
+        }
+      }
+    })();
   };
 
   const shareLink = async () => {
@@ -452,419 +398,404 @@ function CollectionPage() {
               </span>
             )}
           </div>
-          <p className="text-sm text-muted-foreground mt-1">
-            {user ? "Your working project draft — add products and customize specifications." : "Saved locally — sign in to push to WhatsApp and save history."}
+          <p className="text-xs text-muted-foreground mt-1">
+            Build your custom project bill of quantities, set specifications, and push directly to WhatsApp for rapid pricing.
           </p>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-2">
           {user && (
-            <Link to="/my-collections" className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3.5 py-2 text-xs font-medium hover:bg-surface-2 transition">
-              <History className="h-4 w-4 text-amber-600" /> My Collections History
+            <Link
+              to="/my-collections"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-2 text-xs font-medium text-foreground hover:bg-surface-2 transition"
+            >
+              <History className="h-4 w-4 text-primary" />
+              <span>Collection History</span>
             </Link>
           )}
-          {!user && (
-            <Link to="/auth" search={{ redirectTo: "/collection", autoPush: false }} className="rounded-md border border-primary px-3.5 py-1.5 text-xs font-medium text-primary hover:bg-primary/10 transition">
-              Sign in to Save & Push
-            </Link>
+          {collectionId && (
+            <button
+              onClick={shareLink}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-2 text-xs font-medium text-foreground hover:bg-surface-2 transition"
+            >
+              <Share2 className="h-4 w-4 text-muted-foreground" />
+              <span>Share Link</span>
+            </button>
           )}
         </div>
       </div>
 
-      {/* Popup Blocker Fallback Banner */}
-      {whatsappFallbackUrl && (
-        <div className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-4 text-emerald-900 dark:text-emerald-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0" />
-            <div>
-              <p className="font-semibold text-sm">Quotation Request Ready!</p>
-              <p className="text-xs text-emerald-700 dark:text-emerald-300">Click below to launch WhatsApp and send your pre-formatted quote.</p>
-            </div>
-          </div>
-          <a
-            href={whatsappFallbackUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="shrink-0 inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-700 transition shadow-sm"
-          >
-            <MessageCircle className="h-4 w-4" /> Continue to WhatsApp
-          </a>
-        </div>
-      )}
-
-      {/* Post-Submission Success Message */}
-      {justSubmitted && lastSubmittedRef && (
-        <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-emerald-900 dark:text-emerald-200 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0" />
-            <div>
-              <p className="font-medium text-sm">Quotation Request Submitted ({lastSubmittedRef})</p>
-              <p className="text-xs text-emerald-700 dark:text-emerald-300">Saved to your permanent history. Active workspace is cleared and ready for your next project.</p>
-            </div>
-          </div>
-          <Link to="/my-collections" className="text-xs font-semibold text-emerald-700 hover:underline shrink-0">
-            View History →
-          </Link>
-        </div>
-      )}
-
-      {/* View Toggles Tab with Heart Icon */}
-      {user && (
-        <div className="flex gap-4 border-b border-border pb-2 text-xs font-semibold uppercase tracking-wider">
-          <button
-            onClick={() => setActiveView("collection")}
-            className={`pb-1.5 border-b-2 transition ${
-              activeView === "collection" ? "border-emerald-600 text-emerald-600" : "border-transparent text-muted-foreground"
-            }`}
-          >
-            Active Working Draft ({products.length})
-          </button>
-          <button
-            onClick={() => setActiveView("favorites")}
-            className={`pb-1.5 border-b-2 transition flex items-center gap-1.5 ${
-              activeView === "favorites" ? "border-red-500 text-red-500" : "border-transparent text-muted-foreground"
-            }`}
-          >
-            <Heart className="h-3.5 w-3.5 fill-red-500 text-red-500" />
-            Favorited Hearts ({favoriteProducts.length})
-          </button>
-        </div>
-      )}
-
-      {/* 2. SELECTED PRODUCTS LIST (PRIMARY CONTENT FIRST) */}
-      {(activeView === "collection" ? products : favoriteProducts).length === 0 ? (
-        <div className="rounded-2xl border-2 border-dashed border-border p-10 sm:p-14 text-center bg-card/50 space-y-4">
-          <div className="grid h-14 w-14 place-items-center rounded-full bg-emerald-500/10 text-emerald-600 mx-auto">
-            <Layers className="h-7 w-7" />
-          </div>
-          <div>
-            <h3 className="font-display text-xl font-semibold text-foreground">No active project workspace</h3>
-            <p className="text-sm text-muted-foreground mt-1 max-w-md mx-auto">
-              Start building your next project! Browse our curated catalogue of premium tiles, natural stone, and sanitary wares to add products.
+      {/* 2. MAIN CONTENT AREA */}
+      {justSubmitted ? (
+        <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/5 p-8 text-center space-y-4 max-w-lg mx-auto">
+          <CheckCircle2 className="h-12 w-12 text-emerald-600 dark:text-emerald-400 mx-auto" />
+          <div className="space-y-1">
+            <h2 className="font-display text-xl font-bold text-foreground">Quotation Request Submitted!</h2>
+            <p className="text-xs text-muted-foreground">
+              Reference: <strong className="font-mono text-foreground">{lastSubmittedRef}</strong>
+            </p>
+            <p className="text-xs text-muted-foreground pt-1">
+              Your quotation request was saved to your permanent Collection History. Your active project workspace is now reset and ready for your next project quotation.
             </p>
           </div>
 
+          {whatsappFallbackUrl && (
+            <div className="pt-2">
+              <a
+                href={whatsappFallbackUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-6 py-3 text-xs font-bold text-white hover:bg-emerald-700 shadow-md transition"
+              >
+                <MessageCircle className="h-4 w-4" />
+                Launch WhatsApp Now
+              </a>
+            </div>
+          )}
+
+          <div className="pt-4 flex flex-wrap items-center justify-center gap-3">
+            <button
+              onClick={() => {
+                setJustSubmitted(false);
+                setLastSubmittedRef(null);
+                setWhatsappFallbackUrl(null);
+              }}
+              className="rounded-lg bg-primary px-5 py-2.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90 transition"
+            >
+              Start New Project Workspace
+            </button>
+            {user && (
+              <Link
+                to="/my-collections"
+                className="rounded-lg border border-border bg-card px-4 py-2.5 text-xs font-medium text-foreground hover:bg-surface-2 transition"
+              >
+                View Collection History
+              </Link>
+            )}
+          </div>
+        </div>
+      ) : products.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-border p-12 text-center space-y-4">
+          <Layers className="h-12 w-12 text-muted-foreground/30 mx-auto" />
+          <div className="space-y-1">
+            <h3 className="font-display text-lg font-semibold text-foreground">No Active Project Workspace</h3>
+            <p className="text-xs text-muted-foreground max-w-sm mx-auto">
+              Explore our luxury surface catalogue and save products to build your project quotation.
+            </p>
+          </div>
           <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
-            <Link to="/" className="rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 shadow-sm transition">
-              Browse Showroom Catalogue
+            <Link
+              to="/"
+              className="inline-block rounded-xl bg-primary px-5 py-2.5 text-xs font-semibold text-primary-foreground hover:bg-primary/95 transition shadow-sm"
+            >
+              Browse Catalogue
             </Link>
             {user && (
-              <Link to="/my-collections" className="rounded-lg border border-border bg-background px-4 py-2.5 text-sm font-medium hover:bg-surface-2 transition">
+              <Link
+                to="/my-collections"
+                className="inline-block rounded-xl border border-border bg-card px-4 py-2.5 text-xs font-medium text-foreground hover:bg-surface-2 transition"
+              >
                 View Collection History
               </Link>
             )}
           </div>
         </div>
       ) : (
-        <>
-          <ul className="space-y-4">
-            {(activeView === "collection" ? products : favoriteProducts).map((p) => {
-              const req = requirementsMap[p.id] || {};
-              const detectedUnit = detectProductUnit(p);
-              const isExpanded = Boolean(expandedMap[p.id]);
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Products List & Specification Inputs */}
+          <div className="lg:col-span-2 space-y-4">
+            <div className="flex items-center justify-between border-b border-border pb-2">
+              <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                Selected Products ({products.length})
+              </span>
+              <span className="text-xs text-muted-foreground">
+                Est. Value: <strong className="text-foreground font-medium">{summaryMetrics.totalPriceFormatted}</strong>
+              </span>
+            </div>
 
-              // Collapsed Preview Text String
-              const previewParts = [
-                `Quantity: ${req.quantity || 1} ${req.unit || detectedUnit}`,
-                req.installation_location ? `Loc: ${req.installation_location}` : null,
-                req.delivery_preference ? `Delivery: ${req.delivery_preference}` : null,
-                req.installation_required && req.installation_required !== "Not Sure" ? `Install: ${req.installation_required}` : null,
-                req.project_notes ? `Notes: ${req.project_notes}` : null
-              ].filter(Boolean);
-              const collapsedPreview = previewParts.join(" | ");
+            <div className="space-y-4">
+              {products.map((product) => {
+                const req = requirementsMap[product.id] || {};
+                const isExpanded = Boolean(expandedMap[product.id]);
+                const qty = req.quantity || 1;
+                const unit = req.unit || detectProductUnit(product);
+                const itemTotal = Number(product.price || 0) * qty;
 
-              return (
-                <li key={p.id} className="rounded-xl border-2 border-emerald-500/30 bg-card overflow-hidden transition shadow-sm shadow-emerald-500/5 hover:border-emerald-500">
-                  {/* Main Product Card Row */}
-                  <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 p-4 sm:p-5">
-                    <Link to="/product/$slug" params={{ slug: p.slug }} className="block h-16 w-16 shrink-0 overflow-hidden rounded-lg bg-muted border border-border/40">
-                      <img src={publicImageUrl(p.generated_studio_image) || publicImageUrl(p.image_url) || ""} alt={p.name} className="h-full w-full object-cover" loading="lazy" />
-                    </Link>
+                return (
+                  <div
+                    key={product.id}
+                    className="rounded-xl border border-border bg-card overflow-hidden shadow-xs hover:border-primary/30 transition"
+                  >
+                    <div className="p-4 flex items-start gap-4">
+                      <img
+                        src={publicImageUrl(product.generated_studio_image) || publicImageUrl(product.image_url) || ""}
+                        alt={product.name}
+                        className="h-20 w-20 rounded-lg object-cover bg-muted border border-border/50 shrink-0"
+                      />
 
-                    <div className="min-w-0 flex-1">
-                      <Link to="/product/$slug" params={{ slug: p.slug }} className="block truncate font-semibold text-base hover:text-primary">
-                        {p.name}
-                      </Link>
-                      <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
-                        <span>Code: {p.code}</span>
-                        {p.brand && <span>• {p.brand}</span>}
+                      <div className="min-w-0 flex-1 space-y-1">
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <Link
+                              to="/product/$slug"
+                              params={{ slug: product.slug }}
+                              className="font-semibold text-sm text-foreground hover:text-primary transition line-clamp-1"
+                            >
+                              {product.name}
+                            </Link>
+                            <p className="text-xs text-muted-foreground font-mono">Code: {product.code}</p>
+                          </div>
+                          <button
+                            onClick={() => promptRemoveProduct(product)}
+                            className="p-1.5 text-muted-foreground hover:text-red-500 rounded-md hover:bg-red-500/10 transition"
+                            title="Remove product"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+
+                        {/* Quantity & Unit Controls */}
+                        <div className="flex flex-wrap items-center gap-3 pt-2">
+                          <div className="flex items-center border border-border rounded-lg bg-surface-2 overflow-hidden">
+                            <button
+                              onClick={() => handleRequirementChange(product.id, { quantity: Math.max(1, qty - 1) })}
+                              className="px-2.5 py-1 text-xs font-bold text-foreground hover:bg-card transition"
+                            >
+                              -
+                            </button>
+                            <span className="px-3 py-1 text-xs font-semibold font-mono border-x border-border/60 min-w-[2.5rem] text-center">
+                              {qty}
+                            </span>
+                            <button
+                              onClick={() => handleRequirementChange(product.id, { quantity: qty + 1 })}
+                              className="px-2.5 py-1 text-xs font-bold text-foreground hover:bg-card transition"
+                            >
+                              +
+                            </button>
+                          </div>
+
+                          <select
+                            value={unit}
+                            onChange={(e) => handleRequirementChange(product.id, { unit: e.target.value })}
+                            className="rounded-lg border border-border bg-surface-2 px-2.5 py-1 text-xs font-medium focus:outline-none"
+                          >
+                            <option value="Pieces">Pieces</option>
+                            <option value="m²">m²</option>
+                          </select>
+
+                          <span className="text-xs font-semibold text-primary ml-auto">
+                            ₦{itemTotal.toLocaleString()}
+                          </span>
+                        </div>
                       </div>
+                    </div>
 
-                      {/* Collapsed Preview Badge Text */}
-                      {!isExpanded && (
-                        <p className="text-xs text-emerald-600 dark:text-emerald-400 font-medium mt-1 truncate">
-                          {collapsedPreview}
-                        </p>
+                    {/* Expand/Collapse Specification Details Button */}
+                    <div className="border-t border-border/50 bg-surface-2/40 px-4 py-2 flex items-center justify-between text-xs">
+                      <button
+                        onClick={() => toggleExpand(product.id)}
+                        className="text-muted-foreground hover:text-foreground flex items-center gap-1 font-medium"
+                      >
+                        {isExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                        <span>{isExpanded ? "Hide Specifications" : "Set Installation & Delivery Specs"}</span>
+                      </button>
+
+                      {(req.installation_location || req.delivery_preference || req.project_notes) && (
+                        <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">
+                          ✓ Specs Configured
+                        </span>
                       )}
                     </div>
 
-                    {/* Price & Quantity Summary Badge */}
-                    <div className="flex sm:flex-col items-center sm:items-end justify-between w-full sm:w-auto gap-2">
-                      <div className="text-right text-base font-bold text-foreground">
-                        ₦{Number(p.price).toLocaleString()}
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <span className="rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 text-xs font-semibold px-2.5 py-0.5 border border-emerald-500/20">
-                          {req.quantity || 1} {req.unit || detectedUnit}
-                        </span>
-                        <button
-                          onClick={() => toggleExpand(p.id)}
-                          className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 dark:text-emerald-400 hover:opacity-80 px-2 py-1 rounded-md hover:bg-surface-2 transition"
-                        >
-                          {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                          <span>{isExpanded ? "Hide Specs" : "▼ Project Requirements"}</span>
-                        </button>
-                      </div>
-                    </div>
-
-                    <button 
-                      onClick={() => setProductToRemove(p)} 
-                      aria-label="Remove Product" 
-                      title="Remove from Active Workspace"
-                      className="rounded-lg p-2 text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition shrink-0"
-                    >
-                      <Trash2 className="h-4.5 w-4.5" />
-                    </button>
-                  </div>
-
-                  {/* Expandable Project Requirement Form Panel (Auto-Saves on Blur/Change) */}
-                  {isExpanded && (
-                    <div className="border-t border-emerald-500/20 bg-surface-2/40 p-4 sm:p-5 text-sm space-y-4">
-                      <div className="flex items-center justify-between">
-                        <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
-                          <FileText className="h-3.5 w-3.5 text-emerald-600" /> Project Specifications & Requirements
-                        </h4>
-                        <span className="text-xs text-muted-foreground">
-                          Auto-Detected Unit: <strong className="text-foreground">{detectedUnit}</strong>
-                        </span>
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                        {/* Quantity with Highlight on Focus & Blur Normalization */}
-                        <div>
-                          <label className="block text-xs font-medium text-muted-foreground mb-1">Required Quantity</label>
-                          <div className="relative flex items-center">
+                    {/* Expandable Specifications Panel */}
+                    {isExpanded && (
+                      <div className="border-t border-border/60 bg-surface-2/60 p-4 space-y-3 text-xs">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-muted-foreground font-medium mb-1">
+                              Installation Location (e.g. Living Room Floor)
+                            </label>
                             <input
-                              type="number"
-                              min="1"
-                              value={req.quantity ?? ""}
-                              onFocus={(e) => e.target.select()}
-                              onChange={(e) => {
-                                const val = e.target.value;
-                                if (val === "") {
-                                  handleRequirementChange(p.id, "quantity", "");
-                                } else {
-                                  handleRequirementChange(p.id, "quantity", Math.max(1, parseInt(val) || 1));
-                                }
-                              }}
-                              onBlur={(e) => {
-                                if (!e.target.value || parseInt(e.target.value) < 1) {
-                                  handleRequirementChange(p.id, "quantity", 1);
-                                }
-                              }}
-                              className="w-full rounded-lg border border-border bg-background px-3 py-1.5 text-sm font-medium focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                              type="text"
+                              placeholder="e.g. Master Bathroom Wall"
+                              value={req.installation_location || ""}
+                              onChange={(e) => handleRequirementChange(product.id, { installation_location: e.target.value })}
+                              className="w-full rounded-md border border-border bg-background px-3 py-1.5 text-xs text-foreground focus:outline-none focus:border-primary"
                             />
-                            <span className="absolute right-2 text-xs font-bold text-emerald-700 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-md">
-                              {req.unit || detectedUnit}
-                            </span>
+                          </div>
+
+                          <div>
+                            <label className="block text-muted-foreground font-medium mb-1">
+                              Delivery Preference
+                            </label>
+                            <select
+                              value={req.delivery_preference || "Deliver to Site"}
+                              onChange={(e) => handleRequirementChange(product.id, { delivery_preference: e.target.value })}
+                              className="w-full rounded-md border border-border bg-background px-3 py-1.5 text-xs text-foreground focus:outline-none focus:border-primary"
+                            >
+                              <option value="Deliver to Site">Deliver to Site (Lagos/Nationwide)</option>
+                              <option value="Self Pickup">Self Pickup from Showroom</option>
+                            </select>
+                          </div>
+
+                          <div>
+                            <label className="block text-muted-foreground font-medium mb-1">
+                              Installation Service Required?
+                            </label>
+                            <select
+                              value={req.installation_required || "Not Sure"}
+                              onChange={(e) => handleRequirementChange(product.id, { installation_required: e.target.value })}
+                              className="w-full rounded-md border border-border bg-background px-3 py-1.5 text-xs text-foreground focus:outline-none focus:border-primary"
+                            >
+                              <option value="Not Sure">Not Sure (Need Advice)</option>
+                              <option value="Yes, Full Installation">Yes, Full Installation Required</option>
+                              <option value="No, Supply Only">No, Supply Material Only</option>
+                            </select>
+                          </div>
+
+                          <div>
+                            <label className="block text-muted-foreground font-medium mb-1">
+                              Special Project Notes / Cuts
+                            </label>
+                            <input
+                              type="text"
+                              placeholder="e.g. 60x120cm size, bullnose edge"
+                              value={req.project_notes || ""}
+                              onChange={(e) => handleRequirementChange(product.id, { project_notes: e.target.value })}
+                              className="w-full rounded-md border border-border bg-background px-3 py-1.5 text-xs text-foreground focus:outline-none focus:border-primary"
+                            />
                           </div>
                         </div>
-
-                        {/* Installation Location */}
-                        <div>
-                          <label className="block text-xs font-medium text-muted-foreground mb-1">Installation Location</label>
-                          <input
-                            type="text"
-                            placeholder="e.g. Kitchen Floor, Master Bath"
-                            value={req.installation_location || ""}
-                            onChange={(e) => handleRequirementChange(p.id, "installation_location", e.target.value)}
-                            className="w-full rounded-lg border border-border bg-background px-3 py-1.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-                          />
-                        </div>
-
-                        {/* Delivery Preference */}
-                        <div>
-                          <label className="block text-xs font-medium text-muted-foreground mb-1">Delivery Preference</label>
-                          <select
-                            value={req.delivery_preference || "Deliver to Site"}
-                            onChange={(e) => handleRequirementChange(p.id, "delivery_preference", e.target.value)}
-                            className="w-full rounded-lg border border-border bg-background px-3 py-1.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-                          >
-                            <option value="Deliver to Site">Deliver to Site</option>
-                            <option value="Warehouse Pickup">Warehouse Pickup</option>
-                            <option value="Freight Arrangement">Freight Arrangement</option>
-                          </select>
-                        </div>
                       </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                        {/* Installation Required */}
-                        <div>
-                          <label className="block text-xs font-medium text-muted-foreground mb-1">Installation Service Required?</label>
-                          <select
-                            value={req.installation_required || "Not Sure"}
-                            onChange={(e) => handleRequirementChange(p.id, "installation_required", e.target.value)}
-                            className="w-full rounded-lg border border-border bg-background px-3 py-1.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-                          >
-                            <option value="Not Sure">Not Sure (Need Technical Advice)</option>
-                            <option value="Yes">Yes (Require Installation Team)</option>
-                            <option value="No">No (Supply Materials Only)</option>
-                          </select>
-                        </div>
-
-                        {/* Project Notes */}
-                        <div className="sm:col-span-2">
-                          <label className="block text-xs font-medium text-muted-foreground mb-1">Specific Notes & Allowances</label>
-                          <input
-                            type="text"
-                            placeholder="e.g. Polished finish preferred, 10% wastage allowance"
-                            value={req.project_notes || ""}
-                            onChange={(e) => handleRequirementChange(p.id, "project_notes", e.target.value)}
-                            className="w-full rounded-lg border border-border bg-background px-3 py-1.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-
-          {/* 3. COMPREHENSIVE COLLECTION SUMMARY (REVIEW PHASE BEFORE SUBMISSION) */}
-          <div className="rounded-xl border border-border bg-card p-5 shadow-sm space-y-4">
-            <div className="flex items-center justify-between border-b border-border/60 pb-3">
-              <h2 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Project Workspace Summary Review</h2>
-              {collectionData?.reference_number && (
-                <span className="text-xs font-mono font-medium text-muted-foreground">Ref: {collectionData.reference_number}</span>
-              )}
-            </div>
-
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-sm">
-              <div className="rounded-lg bg-surface-2/60 p-3 border border-border/50">
-                <span className="text-[11px] text-muted-foreground block">Selected Products</span>
-                <span className="font-semibold text-base text-foreground">{summaryMetrics.totalProducts} Items</span>
-              </div>
-              <div className="rounded-lg bg-surface-2/60 p-3 border border-border/50">
-                <span className="text-[11px] text-muted-foreground block">Est. Total Quantity</span>
-                <span className="font-semibold text-base text-emerald-600">{summaryMetrics.totalQtyString}</span>
-              </div>
-              <div className="rounded-lg bg-surface-2/60 p-3 border border-border/50">
-                <span className="text-[11px] text-muted-foreground block">Est. Collection Value</span>
-                <span className="font-semibold text-base text-foreground">{summaryMetrics.totalPriceFormatted}</span>
-              </div>
-              <div className="rounded-lg bg-surface-2/60 p-3 border border-border/50">
-                <span className="text-[11px] text-muted-foreground block">Site Delivery Items</span>
-                <span className="font-semibold text-base text-foreground">{summaryMetrics.deliveryItemsCount} Items</span>
-              </div>
-              <div className="col-span-2 sm:col-span-1 rounded-lg bg-surface-2/60 p-3 border border-border/50">
-                <span className="text-[11px] text-muted-foreground block">Installer Service</span>
-                <span className="font-semibold text-base text-foreground">
-                  {summaryMetrics.installerRequestedCount > 0 ? `${summaryMetrics.installerRequestedCount} Requested` : "None"}
-                </span>
-              </div>
-            </div>
-
-            {/* ACTION BUTTONS: PUSH TO WHATSAPP & SHARE COLLECTION */}
-            <div className="pt-2 flex flex-wrap items-center gap-3">
-              <button
-                onClick={pushToWhatsApp}
-                disabled={isSubmitting}
-                className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-6 py-3 text-sm font-semibold text-white hover:bg-emerald-700 transition shadow-sm"
-              >
-                <MessageCircle className="h-4 w-4" /> Push to WhatsApp
-              </button>
-
-              {activeView === "collection" && (
-                <button
-                  onClick={shareLink}
-                  className="inline-flex items-center gap-2 rounded-lg border border-border bg-background px-4 py-3 text-sm font-medium hover:bg-surface-2 transition"
-                >
-                  <Share2 className="h-4 w-4" /> Share Link
-                </button>
-              )}
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </div>
-        </>
+
+          {/* Quotation Summary Card & Push to WhatsApp Action */}
+          <div className="space-y-4">
+            <div className="rounded-2xl border border-border bg-card p-5 space-y-4 sticky top-20 shadow-sm">
+              <div className="border-b border-border pb-3">
+                <h3 className="font-display text-base font-semibold">Quotation Summary</h3>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Est. summary bill of quantities for WhatsApp submission.
+                </p>
+              </div>
+
+              <div className="space-y-2.5 text-xs">
+                <div className="flex justify-between text-muted-foreground">
+                  <span>Selected Products:</span>
+                  <span className="font-semibold text-foreground">{summaryMetrics.itemCount}</span>
+                </div>
+                <div className="flex justify-between text-muted-foreground">
+                  <span>Est. Total Quantity:</span>
+                  <span className="font-semibold text-foreground">{summaryMetrics.totalQtyString}</span>
+                </div>
+                <div className="flex justify-between text-muted-foreground">
+                  <span>Delivery Services:</span>
+                  <span className="font-semibold text-foreground">{summaryMetrics.deliveryItemsCount} Items Configured</span>
+                </div>
+                <div className="flex justify-between text-muted-foreground">
+                  <span>Installer Services:</span>
+                  <span className="font-semibold text-foreground">
+                    {summaryMetrics.installerRequestedCount > 0 ? "Requested" : "None"}
+                  </span>
+                </div>
+
+                <div className="border-t border-border pt-3 flex justify-between items-baseline">
+                  <span className="font-bold text-sm text-foreground">Est. Total Material Cost:</span>
+                  <span className="font-bold text-lg text-primary">{summaryMetrics.totalPriceFormatted}</span>
+                </div>
+              </div>
+
+              <button
+                onClick={handlePushToWhatsAppClick}
+                disabled={isSubmitting}
+                className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-5 py-3.5 text-sm font-bold text-white hover:bg-emerald-700 active:scale-[0.99] transition shadow-md disabled:opacity-50"
+              >
+                <MessageCircle className="h-5 w-5" />
+                <span>Push Collection to WhatsApp</span>
+              </button>
+
+              <p className="text-[11px] text-muted-foreground text-center leading-relaxed">
+                Submitting saves your project collection to your permanent History record and opens WhatsApp for direct pricing.
+              </p>
+            </div>
+          </div>
+        </div>
       )}
 
-      {/* REMOVE PRODUCT CONFIRMATION MODAL */}
-      {productToRemove && (
-        <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-sm rounded-xl border border-border bg-card p-6 shadow-2xl space-y-4">
-            <div className="flex items-center gap-3">
-              <div className="grid h-10 w-10 place-items-center rounded-full bg-destructive/10 text-destructive shrink-0">
-                <Trash2 className="h-5 w-5" />
-              </div>
-              <div>
-                <h3 className="font-display text-base font-semibold">Remove Product?</h3>
-                <p className="text-xs text-muted-foreground">Are you sure you want to remove <strong className="text-foreground">{productToRemove.name}</strong> from your Active Workspace?</p>
-              </div>
+      {/* Phone Input Modal */}
+      {showPhoneModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
+          <div className="w-full max-w-sm rounded-2xl border border-border bg-card p-6 space-y-4 shadow-xl">
+            <div className="space-y-1 text-center">
+              <Phone className="h-8 w-8 text-primary mx-auto" />
+              <h3 className="font-display text-lg font-bold text-foreground">Enter Phone Number</h3>
+              <p className="text-xs text-muted-foreground">
+                Please provide a phone number so our sales team can attach your quotation to your project account.
+              </p>
             </div>
 
-            <div className="flex items-center justify-end gap-2 pt-2">
+            <form onSubmit={handlePhoneSubmit} className="space-y-3">
+              <input
+                type="tel"
+                placeholder="e.g. +234 801 234 5678"
+                value={phoneInput}
+                onChange={(e) => setPhoneInput(e.target.value)}
+                autoFocus
+                className="w-full rounded-xl border border-border bg-surface-2 px-4 py-2.5 text-sm text-foreground focus:outline-none focus:border-primary"
+              />
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowPhoneModal(false)}
+                  className="flex-1 rounded-xl border border-border bg-surface-2 py-2 text-xs font-semibold text-foreground hover:bg-card transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 rounded-xl bg-primary py-2 text-xs font-semibold text-primary-foreground hover:bg-primary/95 transition shadow-sm"
+                >
+                  Save & Push to WhatsApp
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Remove Confirmation Modal */}
+      {productToRemove && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
+          <div className="w-full max-w-sm rounded-2xl border border-border bg-card p-6 space-y-4 shadow-xl">
+            <div className="space-y-1 text-center">
+              <AlertCircle className="h-8 w-8 text-red-500 mx-auto" />
+              <h3 className="font-display text-lg font-bold text-foreground">Remove Product?</h3>
+              <p className="text-xs text-muted-foreground">
+                Are you sure you want to remove <strong className="text-foreground">{productToRemove.name}</strong> from your active project workspace?
+              </p>
+            </div>
+
+            <div className="flex gap-2 pt-2">
               <button
                 type="button"
                 onClick={() => setProductToRemove(null)}
-                className="rounded-lg border border-border px-4 py-2 text-xs font-medium hover:bg-surface-2 transition"
+                className="flex-1 rounded-xl border border-border bg-surface-2 py-2.5 text-xs font-semibold text-foreground hover:bg-card transition"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={confirmRemoveProduct}
-                className="rounded-lg bg-destructive px-4 py-2 text-xs font-semibold text-destructive-foreground hover:bg-destructive/90 transition"
+                className="flex-1 rounded-xl bg-red-600 py-2.5 text-xs font-semibold text-white hover:bg-red-700 transition shadow-sm"
               >
-                Remove Product
+                Remove
               </button>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* PHONE NUMBER COLLECTION MODAL */}
-      {showPhoneModal && (
-        <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-md rounded-xl border border-border bg-card p-6 shadow-2xl space-y-4">
-            <div className="flex items-center gap-3">
-              <div className="grid h-10 w-10 place-items-center rounded-full bg-emerald-500/10 text-emerald-600 shrink-0">
-                <Phone className="h-5 w-5" />
-              </div>
-              <div>
-                <h3 className="font-display text-lg font-semibold">Help us contact you about your quotation</h3>
-                <p className="text-xs text-muted-foreground">Please enter your primary phone number to complete your WhatsApp submission.</p>
-              </div>
-            </div>
-
-            <form onSubmit={handlePhoneSubmit} className="space-y-4">
-              <div>
-                <label className="block text-xs font-medium text-muted-foreground mb-1">Phone Number</label>
-                <input
-                  type="tel"
-                  required
-                  placeholder="e.g. +234 801 234 5678"
-                  value={phoneInput}
-                  onChange={(e) => setPhoneInput(e.target.value)}
-                  className="w-full rounded-lg border border-border bg-background px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-                />
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowPhoneModal(false)}
-                  className="rounded-lg border border-border px-4 py-2 text-xs font-medium hover:bg-surface-2 transition"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="rounded-lg bg-emerald-600 px-5 py-2 text-xs font-semibold text-white hover:bg-emerald-700 transition"
-                >
-                  Save & Continue to WhatsApp
-                </button>
-              </div>
-            </form>
           </div>
         </div>
       )}

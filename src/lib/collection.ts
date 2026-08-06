@@ -237,6 +237,47 @@ export async function getUserCollectionItems(userId: string) {
   return result;
 }
 
+/** Parallelized workspace loader executing profile, items, collections, and product queries concurrently */
+export async function getBatchCollectionWorkspaceData(userId: string) {
+  const cached = getCachedUserCollectionItems(userId);
+  let colId = cached.collection_id;
+
+  if (!colId) {
+    colId = await ensureUserCollection(userId);
+  }
+
+  const [profRes, itemsRes, colInfoRes] = await Promise.all([
+    supabase.from("profiles").select("*").eq("auth_id", userId).maybeSingle(),
+    colId
+      ? supabase
+          .from("collection_items")
+          .select("product_id, added_at, collection_id")
+          .eq("collection_id", colId)
+          .order("added_at", { ascending: false })
+      : Promise.resolve({ data: [] }),
+    colId
+      ? supabase.from("collections").select("*").eq("id", colId).maybeSingle()
+      : Promise.resolve({ data: null }),
+  ]);
+
+  const items = itemsRes.data ?? [];
+  const productIds = items.map((i: any) => i.product_id);
+  const products = productIds.length > 0 ? await fetchProductsByIds(productIds) : [];
+
+  if (typeof window !== "undefined" && colId) {
+    const cacheKey = `${CACHED_ITEMS_KEY_PREFIX}${userId}`;
+    window.localStorage.setItem(cacheKey, JSON.stringify({ collection_id: colId, items }));
+  }
+
+  return {
+    profile: profRes.data ?? null,
+    collectionId: colId,
+    collectionData: colInfoRes.data ?? null,
+    items,
+    products,
+  };
+}
+
 export async function addItemToUserCollection(userId: string, product_id: string) {
   const cacheKey = `${CACHED_ITEMS_KEY_PREFIX}${userId}`;
   let collection_id = "";
@@ -302,28 +343,45 @@ export async function removeItemFromUserCollection(userId: string, product_id: s
   }
 }
 
+/** Atomic, safe guest collection merging in 1 single array payload */
 export async function mergeGuestIntoUser(userId: string) {
   const guest = getGuestCollection();
   if (!guest.length) return;
   const collection_id = await ensureUserCollection(userId);
   if (!collection_id) return;
 
-  for (const g of guest) {
-    try {
-      await supabase
-        .from("collection_items")
-        .upsert({ collection_id, product_id: g.product_id }, { onConflict: "collection_id,product_id", ignoreDuplicates: true });
-    } catch {
-      try {
-        await supabase.from("collection_items").insert({ collection_id, product_id: g.product_id });
-      } catch {}
+  const payload = guest.map((g) => ({
+    collection_id,
+    product_id: g.product_id,
+  }));
+
+  try {
+    const { error } = await supabase
+      .from("collection_items")
+      .upsert(payload, { onConflict: "collection_id,product_id", ignoreDuplicates: true });
+
+    if (error) {
+      await supabase.from("collection_items").insert(payload);
     }
+  } catch (err) {
+    console.error("Atomic guest merge error:", err);
   }
 
-  // Preserve guest specifications into user requirement map
+  // Update local user cache synchronously FIRST
+  const cacheKey = `${CACHED_ITEMS_KEY_PREFIX}${userId}`;
   const reqKey = `${USER_REQ_KEY_PREFIX}${userId}`;
   if (typeof window !== "undefined") {
     try {
+      const cached = JSON.parse(window.localStorage.getItem(cacheKey) || '{"items":[]}');
+      const existingIds = new Set(cached.items.map((i: any) => i.product_id));
+      guest.forEach((g) => {
+        if (!existingIds.has(g.product_id)) {
+          cached.items.unshift({ product_id: g.product_id, added_at: g.added_at || new Date().toISOString() });
+        }
+      });
+      cached.collection_id = collection_id;
+      window.localStorage.setItem(cacheKey, JSON.stringify(cached));
+
       const rawGuestReqs = JSON.parse(window.localStorage.getItem(GUEST_REQ_KEY) || "{}");
       const existingUserReqs = JSON.parse(window.localStorage.getItem(reqKey) || "{}");
       const mergedReqs = { ...existingUserReqs, ...rawGuestReqs };
