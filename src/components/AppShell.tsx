@@ -360,16 +360,10 @@ function BottomNav() {
   
   const [collectionCount, setCollectionCount] = useState(0);
 
-  const loadCollectionCount = useCallback(async () => {
+  const loadCollectionCount = useCallback(() => {
     if (user?.id) {
       const cached = getCachedUserCollectionItems(user.id);
-      setCollectionCount(cached.items.length); // Instant synchronous update (<16ms)
-      try {
-        const { items } = await getUserCollectionItems(user.id);
-        setCollectionCount(items.length);
-      } catch (err) {
-        // ignore
-      }
+      setCollectionCount(cached.items.length);
     } else {
       setCollectionCount(getGuestCollection().length);
     }
