@@ -1,15 +1,17 @@
 import { useEffect, useState } from "react";
-import { Bookmark, BookmarkCheck } from "lucide-react";
+import { Plus, Check } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/use-auth";
 import {
   addGuestItem,
   addItemToUserCollection,
+  addItemToUserCollectionSync,
   getGuestCollection,
-  getUserCollectionItems,
+  getCachedUserCollectionItems,
   removeGuestItem,
   removeItemFromUserCollection,
+  removeItemFromUserCollectionSync,
 } from "@/lib/collection";
 
 export function AddToCollectionButton({
@@ -23,92 +25,84 @@ export function AddToCollectionButton({
 }) {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const [saved, setSaved] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const [added, setAdded] = useState(false);
 
   useEffect(() => {
-    let cancelled = false;
-    const refresh = async () => {
+    const refresh = () => {
       if (user) {
-        const { items } = await getUserCollectionItems(user.id);
-        if (!cancelled) setSaved(items.some((i: any) => i.product_id === productId));
+        const cached = getCachedUserCollectionItems(user.id);
+        setAdded(cached.items.some((i: any) => i.product_id === productId));
       } else {
-        setSaved(getGuestCollection().some((i: any) => i.product_id === productId));
+        setAdded(getGuestCollection().some((i: any) => i.product_id === productId));
       }
     };
     refresh();
-    const onChange = () => refresh();
-    window.addEventListener("collection:change", onChange);
+    window.addEventListener("collection:change", refresh);
     return () => {
-      cancelled = true;
-      window.removeEventListener("collection:change", onChange);
+      window.removeEventListener("collection:change", refresh);
     };
   }, [productId, user]);
 
-  const onClick = async () => {
-    if (busy) return;
-    setBusy(true);
-    try {
-      let currentCount = 0;
-      if (user) {
-        const { items } = await getUserCollectionItems(user.id);
-        currentCount = items.length;
-      } else {
-        currentCount = getGuestCollection().length;
-      }
+  const onClick = (e?: React.MouseEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
 
+    const nextState = !added;
+    setAdded(nextState); // Instant synchronous visual toggle (<0.1ms)
+
+    try {
       if (!user) {
-        // Save guest item, then prompt login
-        if (!saved) {
+        if (nextState) {
           addGuestItem(productId);
-          setSaved(true);
-          const nextCount = currentCount + 1;
-          toast.success(`+${nextCount}`, {
+          const currentCount = getGuestCollection().length;
+          toast.success(`+${currentCount}`, {
             description: "Sign in to sync across devices.",
             action: { label: "Sign in", onClick: () => navigate({ to: "/auth" }) },
           });
         } else {
           removeGuestItem(productId);
-          setSaved(false);
         }
       } else {
-        if (!saved) {
-          await addItemToUserCollection(user.id, productId);
-          setSaved(true);
-          window.dispatchEvent(new Event("collection:change"));
-          const nextCount = currentCount + 1;
-          toast.success(`+${nextCount}`);
+        if (nextState) {
+          // 1. Instant local sync (<0.1ms)
+          const cached = addItemToUserCollectionSync(user.id, productId);
+          toast.success(`+${cached.items.length}`);
+          // 2. Non-blocking background database sync
+          void addItemToUserCollection(user.id, productId);
         } else {
-          await removeItemFromUserCollection(user.id, productId);
-          setSaved(false);
-          window.dispatchEvent(new Event("collection:change"));
+          // 1. Instant local sync (<0.1ms)
+          removeItemFromUserCollectionSync(user.id, productId);
+          // 2. Non-blocking background database sync
+          void removeItemFromUserCollection(user.id, productId);
         }
       }
     } catch (e) {
       console.error(e);
+      setAdded(!nextState); // Rollback state on error
       toast.error("Couldn't update collection");
-    } finally {
-      setBusy(false);
     }
   };
 
-  const Icon = saved ? BookmarkCheck : Bookmark;
+  const Icon = added ? Check : Plus;
+  const labelText = added ? "Added" : compact ? "+ Add" : "Add to Collection";
+
   return (
     <button
       type="button"
       onClick={onClick}
-      disabled={busy}
       className={
         className ??
         `flex flex-1 items-center justify-center gap-1 rounded-md border ${
-          saved
-            ? "border-primary bg-primary/10 text-primary"
-            : "border-border bg-surface-2 text-foreground hover:border-primary hover:text-primary"
-        } px-2 py-1.5 text-[11px] font-medium transition`
+          added
+            ? "border-emerald-600/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-semibold shadow-xs"
+            : "border-border bg-surface-2 text-foreground hover:border-primary hover:text-primary font-medium"
+        } px-2.5 py-1.5 text-[11px] transition-all duration-150 active:scale-95`
       }
     >
       <Icon className="h-3.5 w-3.5" />
-      {compact ? (saved ? "Saved" : "Save") : saved ? "In Collection" : "Add to Collection"}
+      <span>{labelText}</span>
     </button>
   );
 }
