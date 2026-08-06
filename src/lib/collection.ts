@@ -167,6 +167,42 @@ export function getCachedUserCollectionItems(userId: string): { collection_id: s
   }
 }
 
+/** Instant synchronous cache writer for adding items (<16ms) */
+export function addItemToUserCollectionSync(userId: string, product_id: string): { collection_id: string; items: any[] } {
+  const cacheKey = `${CACHED_ITEMS_KEY_PREFIX}${userId}`;
+  let cached: { collection_id: string; items: any[] } = { collection_id: "", items: [] };
+
+  if (typeof window !== "undefined") {
+    try {
+      cached = JSON.parse(window.localStorage.getItem(cacheKey) || '{"items":[]}');
+      if (!cached.items.some((i: any) => i.product_id === product_id)) {
+        cached.items.unshift({ product_id, added_at: new Date().toISOString() });
+        window.localStorage.setItem(cacheKey, JSON.stringify(cached));
+      }
+    } catch {}
+    window.dispatchEvent(new Event("collection:change"));
+  }
+
+  return cached;
+}
+
+/** Instant synchronous cache writer for removing items (<16ms) */
+export function removeItemFromUserCollectionSync(userId: string, product_id: string): { collection_id: string; items: any[] } {
+  const cacheKey = `${CACHED_ITEMS_KEY_PREFIX}${userId}`;
+  let cached: { collection_id: string; items: any[] } = { collection_id: "", items: [] };
+
+  if (typeof window !== "undefined") {
+    try {
+      cached = JSON.parse(window.localStorage.getItem(cacheKey) || '{"items":[]}');
+      cached.items = cached.items.filter((i: any) => i.product_id !== product_id);
+      window.localStorage.setItem(cacheKey, JSON.stringify(cached));
+    } catch {}
+    window.dispatchEvent(new Event("collection:change"));
+  }
+
+  return cached;
+}
+
 /** Guaranteed active collection generator (Schema-Safe strictly standard columns) */
 export async function ensureUserCollection(userId: string): Promise<string> {
   if (!userId) return "";
@@ -299,20 +335,12 @@ export async function addItemToUserCollection(userId: string, product_id: string
   let collection_id = "";
 
   // 1. Update local cache synchronously FIRST (< 16ms)
-  if (typeof window !== "undefined") {
-    try {
-      const cached = JSON.parse(window.localStorage.getItem(cacheKey) || '{"items":[]}');
-      collection_id = cached.collection_id || "";
-      if (!cached.items.some((i: any) => i.product_id === product_id)) {
-        cached.items.unshift({ product_id, added_at: new Date().toISOString() });
-        window.localStorage.setItem(cacheKey, JSON.stringify(cached));
-      }
-    } catch {}
-    window.dispatchEvent(new Event("collection:change"));
-  }
+  addItemToUserCollectionSync(userId, product_id);
 
   // 2. Background async sync with Supabase
   try {
+    const cached = getCachedUserCollectionItems(userId);
+    collection_id = cached.collection_id || "";
     if (!collection_id) collection_id = await ensureUserCollection(userId);
     if (collection_id) {
       const { error } = await supabase
@@ -330,22 +358,12 @@ export async function addItemToUserCollection(userId: string, product_id: string
 }
 
 export async function removeItemFromUserCollection(userId: string, product_id: string) {
-  const cacheKey = `${CACHED_ITEMS_KEY_PREFIX}${userId}`;
-  let collection_id = "";
+  removeItemFromUserCollectionSync(userId, product_id);
 
-  // 1. Update local cache synchronously FIRST (< 16ms)
-  if (typeof window !== "undefined") {
-    try {
-      const cached = JSON.parse(window.localStorage.getItem(cacheKey) || '{"items":[]}');
-      collection_id = cached.collection_id || "";
-      cached.items = cached.items.filter((i: any) => i.product_id !== product_id);
-      window.localStorage.setItem(cacheKey, JSON.stringify(cached));
-    } catch {}
-    window.dispatchEvent(new Event("collection:change"));
-  }
-
-  // 2. Background async sync with Supabase
+  // Background async sync with Supabase
   try {
+    const cached = getCachedUserCollectionItems(userId);
+    let collection_id = cached.collection_id || "";
     if (!collection_id) collection_id = await ensureUserCollection(userId);
     if (collection_id) {
       await supabase
