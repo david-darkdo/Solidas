@@ -1,11 +1,13 @@
 // @ts-nocheck
-import { createFileRoute, Link, notFound } from "@tanstack/react-router";
+import { createFileRoute, Link, notFound, redirect } from "@tanstack/react-router";
 import { queryOptions, useSuspenseQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { AppShell } from "@/components/AppShell";
 import { ProductCard } from "@/components/ProductCard";
 import { publicImageUrl } from "@/components/ImageUploader";
 import { ArrowRight, Layers } from "lucide-react";
+import { slugify } from "@/lib/slug";
+import { getCanonicalProductUrl } from "@/lib/product-url";
 
 type ResolvedHierarchy = {
   type: any;
@@ -24,8 +26,30 @@ const hierarchyQuery = (splat: string, origin: string) =>
     queryKey: ["hierarchy", splat],
     queryFn: async (): Promise<ResolvedHierarchy> => {
       const parts = splat.split("/").filter(Boolean);
-      if (parts.length === 0 || parts.length > 4) {
+      if (parts.length === 0 || parts.length > 5) {
         throw notFound();
+      }
+
+      // Check if last segment is a product slug (malformed legacy URLs like /doors/exterior-doors/Right door /copper-door)
+      if (parts.length >= 3) {
+        const lastPartSlug = slugify(parts[parts.length - 1]);
+        if (lastPartSlug) {
+          const { data: matchedProduct } = await supabase
+            .from("products")
+            .select("id, slug, name")
+            .or(`slug.eq.${lastPartSlug},slug.eq.${parts[parts.length - 1]}`)
+            .eq("status", "published")
+            .eq("hidden", false)
+            .is("deleted_at", null)
+            .maybeSingle();
+
+          if (matchedProduct) {
+            throw redirect({
+              href: getCanonicalProductUrl(matchedProduct, origin),
+              statusCode: 301,
+            });
+          }
+        }
       }
 
       const typeSlug = parts[0];

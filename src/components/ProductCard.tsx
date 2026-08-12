@@ -4,6 +4,7 @@ import { AddToCollectionButton } from "./AddToCollectionButton";
 import { publicImageUrl } from "./ImageUploader";
 import { Heart } from "lucide-react";
 import { useEffect, useState, useMemo } from "react";
+import { getCanonicalProductSlug } from "@/lib/product-url";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { useFavorites } from "@/hooks/useFavorites";
@@ -86,7 +87,7 @@ export function ProductCard({ product }: { product: ProductRow }) {
 
       <Link
         to="/product/$slug"
-        params={{ slug: product.slug }}
+        params={{ slug: getCanonicalProductSlug(product) }}
         className="block aspect-square overflow-hidden bg-muted"
       >
         <img
@@ -114,7 +115,7 @@ export function ProductCard({ product }: { product: ProductRow }) {
           <AddToCollectionButton productId={product.id} compact />
           <Link
             to="/product/$slug"
-            params={{ slug: product.slug }}
+            params={{ slug: getCanonicalProductSlug(product) }}
             className="flex-1 flex items-center justify-center rounded bg-primary px-3 py-1.5 text-[10px] font-semibold text-primary-foreground hover:bg-primary/95 transition shadow-sm"
           >
             View

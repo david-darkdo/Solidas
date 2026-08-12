@@ -1,5 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { getProductionOrigin } from "@/lib/origin";
+import { getCanonicalProductUrl } from "@/lib/product-url";
+import { supabase } from "@/integrations/supabase/client";
 
 export const Route = createFileRoute("/sitemap-products.xml")({
   server: {
@@ -12,19 +14,17 @@ export const Route = createFileRoute("/sitemap-products.xml")({
         try {
           const { data: products } = await supabase
             .from("products" as any)
-            .select("slug, updated_at, created_at")
+            .select("id, slug, name, updated_at, created_at")
             .eq("status", "published")
             .eq("hidden", false)
             .is("deleted_at", null);
 
           if (products) {
             for (const p of (products as any[])) {
-              if (p.slug) {
-                urls.push({
-                  loc: `${origin}/product/${p.slug}`,
-                  lastmod: p.updated_at || p.created_at || now,
-                });
-              }
+              urls.push({
+                loc: getCanonicalProductUrl(p, origin),
+                lastmod: p.updated_at || p.created_at || now,
+              });
             }
           }
         } catch (err) {

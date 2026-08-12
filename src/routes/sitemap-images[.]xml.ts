@@ -1,5 +1,8 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { getProductionOrigin } from "@/lib/origin";
+import { getCanonicalProductUrl } from "@/lib/product-url";
+import { supabase } from "@/integrations/supabase/client";
+import { publicImageUrl } from "@/components/ImageUploader";
 
 export const Route = createFileRoute("/sitemap-images.xml")({
   server: {
@@ -11,15 +14,14 @@ export const Route = createFileRoute("/sitemap-images.xml")({
         try {
           const { data: products } = await supabase
             .from("products" as any)
-            .select("slug, name, alt_text, seo_description, image_url, generated_installed_image, generated_studio_image")
+            .select("id, slug, name, alt_text, seo_description, image_url, generated_installed_image, generated_studio_image")
             .eq("status", "published")
             .eq("hidden", false)
             .is("deleted_at", null);
 
           if (products) {
             for (const p of (products as any[])) {
-              if (!p.slug) continue;
-              const productUrl = `${origin}/product/${p.slug}`;
+              const productUrl = getCanonicalProductUrl(p, origin);
               const title = p.name || "Enreach Concepts Product";
               const caption = p.alt_text || p.seo_description || title;
 

@@ -1,4 +1,4 @@
-import { createFileRoute, Link, notFound } from "@tanstack/react-router";
+import { createFileRoute, Link, notFound, redirect } from "@tanstack/react-router";
 import { queryOptions, useSuspenseQuery } from "@tanstack/react-query";
 import { AppShell } from "@/components/AppShell";
 import { ProductCard } from "@/components/ProductCard";
@@ -13,6 +13,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
 import { getProductionOrigin } from "@/lib/origin";
+import { getCanonicalProductSlug, getCanonicalProductUrl, getCanonicalProductPath } from "@/lib/product-url";
 
 const productQuery = (slug: string) =>
   queryOptions({
@@ -35,6 +36,16 @@ export const Route = createFileRoute("/product/$slug")({
   loader: async ({ context, params }) => {
     const origin = getProductionOrigin();
     const product = await context.queryClient.ensureQueryData(productQuery(params.slug));
+
+    // Redirect unnormalized or legacy slug formats to canonical URL (HTTP 301)
+    const canonicalSlug = getCanonicalProductSlug(product);
+    if (params.slug !== canonicalSlug) {
+      throw redirect({
+        href: getCanonicalProductUrl(product, origin),
+        statusCode: 301,
+      });
+    }
+
     context.queryClient.ensureQueryData(relatedQuery(product.family_id, product.id));
 
     // Fetch taxonomy parents
@@ -62,7 +73,7 @@ export const Route = createFileRoute("/product/$slug")({
     const title = product?.seo_title || `${product?.name || "Product"} — Enreach Concepts`;
     const desc = product?.seo_description || product?.short_description || "Premium building material details.";
     const imageUrl = product?.generated_studio_image || product?.image_url || "";
-    const canonical = `${origin}/product/${product?.slug || ""}`;
+    const canonical = getCanonicalProductUrl(product, origin);
 
     return {
       meta: [
@@ -208,7 +219,7 @@ function ProductPage() {
         }
       }
     }
-    list.push({ label: product.name, path: `/product/${product.slug}` });
+    list.push({ label: product.name, path: getCanonicalProductPath(product) });
     return list;
   }, [taxonomy, product]);
 
@@ -222,6 +233,8 @@ function ProductPage() {
       "item": b.path.startsWith("/") ? `${origin}${b.path}` : b.path
     }))
   };
+
+  const canonicalProductUrl = getCanonicalProductUrl(product, origin);
 
   const productSchema = {
     "@context": "https://schema.org",
@@ -245,7 +258,7 @@ function ProductPage() {
     "category": taxonomy.subcategory?.name ? `${taxonomy.category?.name || "Material"} > ${taxonomy.subcategory.name}` : (taxonomy.category?.name || "Material"),
     "offers": {
       "@type": "Offer",
-      "url": `${origin}/product/${product.slug}`,
+      "url": canonicalProductUrl,
       "priceCurrency": "NGN",
       "price": product.price || 0,
       "priceValidUntil": "2027-12-31",
