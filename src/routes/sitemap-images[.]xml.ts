@@ -1,3 +1,4 @@
+import { createFileRoute } from '@tanstack/react-router'
 import { getProductionOrigin } from "@/lib/origin";
 
 export const Route = createFileRoute("/sitemap-images.xml")({

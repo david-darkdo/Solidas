@@ -1,3 +1,4 @@
+import { createFileRoute } from '@tanstack/react-router'
 import { getProductionOrigin } from "@/lib/origin";
 
 export const Route = createFileRoute("/sitemap-categories.xml")({
@@ -65,12 +66,19 @@ export const Route = createFileRoute("/sitemap-categories.xml")({
           // 4. Family Groups
           for (const f of families) {
             if (!f.slug) continue;
-            const sub = subMap.get(f.subcategory_id);
-            const cat = sub ? catMap.get(sub.category_id) : null;
+            const sub = f.subcategory_id ? subMap.get(f.subcategory_id) : null;
+            const cat = sub ? catMap.get(sub.category_id) : (f.category_id ? catMap.get(f.category_id) : null);
             const type = cat ? typeMap.get(cat.type_id) : null;
+
             if (type?.slug && cat?.slug && sub?.slug) {
               urls.push({
                 loc: `${origin}/${type.slug}/${cat.slug}/${encodeURIComponent(sub.slug)}/${encodeURIComponent(f.slug)}`,
+                lastmod: f.created_at || now,
+                priority: "0.75",
+              });
+            } else if (type?.slug && cat?.slug) {
+              urls.push({
+                loc: `${origin}/${type.slug}/${cat.slug}/${encodeURIComponent(f.slug)}`,
                 lastmod: f.created_at || now,
                 priority: "0.75",
               });

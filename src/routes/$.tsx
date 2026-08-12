@@ -30,8 +30,8 @@ const hierarchyQuery = (splat: string, origin: string) =>
 
       const typeSlug = parts[0];
       const categorySlug = parts[1] || null;
-      const subcategorySlug = parts[2] || null;
-      const familySlug = parts[3] || null;
+      const slug3 = parts[2] || null;
+      const slug4 = parts[3] || null;
 
       // 1. Resolve Type
       const { data: type } = await supabase
@@ -55,27 +55,70 @@ const hierarchyQuery = (splat: string, origin: string) =>
         category = cat;
       }
 
-      // 3. Resolve Subcategory if provided
+      // 3 & 4. Resolve Subcategory and Family Group based on parts length
       let subcategory = null;
-      if (category && subcategorySlug && subcategorySlug !== "all" && subcategorySlug !== "default") {
+      let family = null;
+
+      if (category && parts.length === 3 && slug3) {
+        // 3-part URL: /type/category/slug3
+        // Check if slug3 is a Subcategory first
         const { data: sub } = await supabase
           .from("subcategories")
           .select("id, name, slug, category_id")
-          .eq("category_id", category?.id)
-          .eq("slug", subcategorySlug)
+          .eq("category_id", category.id)
+          .eq("slug", slug3)
           .maybeSingle();
+
+        if (sub) {
+          subcategory = sub;
+        } else {
+          // If not a subcategory, check if slug3 is a Family Group under this category
+          const { data: subsForCat } = await supabase
+            .from("subcategories")
+            .select("id")
+            .eq("category_id", category.id);
+
+          const subIds = (subsForCat || []).map((s) => s.id);
+
+          let famQuery = supabase.from("family_groups").select("id, name, slug, subcategory_id, custom_ai_prompt_override").eq("slug", slug3);
+          if (subIds.length > 0) {
+            famQuery = famQuery.or(`subcategory_id.in.(${subIds.join(",")}),category_id.eq.${category.id}`);
+          } else {
+            famQuery = famQuery.eq("category_id", category.id);
+          }
+
+          const { data: fam } = await famQuery.maybeSingle();
+          if (!fam) throw notFound();
+
+          family = fam;
+          if (fam.subcategory_id) {
+            const { data: parentSub } = await supabase
+              .from("subcategories")
+              .select("id, name, slug, category_id")
+              .eq("id", fam.subcategory_id)
+              .maybeSingle();
+            if (parentSub) subcategory = parentSub;
+          }
+        }
+      } else if (category && parts.length === 4 && slug3 && slug4) {
+        // 4-part URL: /type/category/subcategory/family
+        const { data: sub } = await supabase
+          .from("subcategories")
+          .select("id, name, slug, category_id")
+          .eq("category_id", category.id)
+          .eq("slug", slug3)
+          .maybeSingle();
+
         if (!sub) throw notFound();
         subcategory = sub;
-      }
 
-      // 4. Resolve Family if provided
-      let family = null;
-      if (familySlug) {
         const { data: fam } = await supabase
           .from("family_groups")
           .select("id, name, slug, subcategory_id, custom_ai_prompt_override")
-          .eq("slug", familySlug)
+          .eq("subcategory_id", sub.id)
+          .eq("slug", slug4)
           .maybeSingle();
+
         if (!fam) throw notFound();
         family = fam;
       }
@@ -99,7 +142,7 @@ const hierarchyQuery = (splat: string, origin: string) =>
         productsQuery = productsQuery.eq("type_id", type.id);
       }
 
-      const { data: products } = await productsQuery.order("created_at", { ascending: false }).limit(60);
+      const { data: products } = await productsQuery.order("created_at", { ascending: false });
 
       // 6. Fetch Child taxonomy nodes
       let childCategories: any[] = [];
