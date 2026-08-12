@@ -1,12 +1,10 @@
-// @ts-nocheck
-import { createFileRoute } from "@tanstack/react-router";
-import { supabase } from "@/integrations/supabase/client";
+import { getProductionOrigin } from "@/lib/origin";
 
 export const Route = createFileRoute("/sitemap-products.xml")({
   server: {
     handlers: {
       GET: async ({ request }) => {
-        const origin = new URL(request.url).origin;
+        const origin = getProductionOrigin(request);
         const now = new Date().toISOString();
         const urls: { loc: string; lastmod: string }[] = [];
 

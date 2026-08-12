@@ -12,6 +12,8 @@ import { useFavorites } from "@/hooks/useFavorites";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
+import { getProductionOrigin } from "@/lib/origin";
+
 const productQuery = (slug: string) =>
   queryOptions({
     queryKey: ["product", slug],
@@ -31,7 +33,7 @@ const relatedQuery = (familyId: string | null, excludeId: string) =>
 
 export const Route = createFileRoute("/product/$slug")({
   loader: async ({ context, params }) => {
-    const origin = typeof window !== 'undefined' ? window.location.origin : 'https://showroom.enreach.concepts';
+    const origin = getProductionOrigin();
     const product = await context.queryClient.ensureQueryData(productQuery(params.slug));
     context.queryClient.ensureQueryData(relatedQuery(product.family_id, product.id));
 
@@ -56,7 +58,7 @@ export const Route = createFileRoute("/product/$slug")({
   },
   head: ({ loaderData }: any): any => {
     const product = loaderData?.product;
-    const origin = loaderData?.origin || "https://showroom.enreach.concepts";
+    const origin = loaderData?.origin || getProductionOrigin();
     const title = product?.seo_title || `${product?.name || "Product"} — Enreach Concepts`;
     const desc = product?.seo_description || product?.short_description || "Premium building material details.";
     const imageUrl = product?.generated_studio_image || product?.image_url || "";

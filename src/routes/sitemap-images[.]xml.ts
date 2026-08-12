@@ -1,13 +1,10 @@
-// @ts-nocheck
-import { createFileRoute } from "@tanstack/react-router";
-import { supabase } from "@/integrations/supabase/client";
-import { publicImageUrl } from "@/components/ImageUploader";
+import { getProductionOrigin } from "@/lib/origin";
 
 export const Route = createFileRoute("/sitemap-images.xml")({
   server: {
     handlers: {
       GET: async ({ request }) => {
-        const origin = new URL(request.url).origin;
+        const origin = getProductionOrigin(request);
         const items: { loc: string; imageLoc: string; title: string; caption: string }[] = [];
 
         try {

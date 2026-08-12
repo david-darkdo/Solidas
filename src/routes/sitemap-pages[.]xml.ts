@@ -1,11 +1,11 @@
-// @ts-nocheck
 import { createFileRoute } from "@tanstack/react-router";
+import { getProductionOrigin } from "@/lib/origin";
 
 export const Route = createFileRoute("/sitemap-pages.xml")({
   server: {
     handlers: {
       GET: async ({ request }) => {
-        const origin = new URL(request.url).origin;
+        const origin = getProductionOrigin(request);
         const now = new Date().toISOString();
 
         const pages = [

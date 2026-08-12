@@ -1,0 +1,25 @@
+export function getProductionOrigin(request?: Request): string {
+  if (typeof window !== "undefined") {
+    return window.location.origin;
+  }
+
+  if (request) {
+    const host = request.headers.get("x-forwarded-host") || request.headers.get("host");
+    const proto = request.headers.get("x-forwarded-proto") || "https";
+    if (host && !host.includes("localhost") && !host.includes("127.0.0.1")) {
+      return `${proto}://${host}`;
+    }
+  }
+
+  if (process.env.SITE_URL) {
+    return process.env.SITE_URL.replace(/\/$/, "");
+  }
+  if (process.env.VERCEL_PROJECT_PRODUCTION_URL) {
+    return `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL.replace(/\/$/, "")}`;
+  }
+  if (process.env.VERCEL_URL) {
+    return `https://${process.env.VERCEL_URL.replace(/\/$/, "")}`;
+  }
+
+  return "https://de-enreach-showroom.vercel.app";
+}
