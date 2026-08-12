@@ -1,6 +1,16 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { getProductionOrigin } from "@/lib/origin";
 
+function escapeXml(str: string): string {
+  if (!str) return "";
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
 export const Route = createFileRoute("/sitemap-pages.xml")({
   server: {
     handlers: {
@@ -15,24 +25,25 @@ export const Route = createFileRoute("/sitemap-pages.xml")({
           { loc: `${origin}/favorites`, priority: "0.5", changefreq: "weekly" },
         ];
 
-        const xml = `<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  ${pages
-    .map(
-      (p) => `
-  <url>
-    <loc>${p.loc}</loc>
+        const urlEntries = pages
+          .map(
+            (p) => `  <url>
+    <loc>${escapeXml(p.loc)}</loc>
     <lastmod>${now}</lastmod>
     <changefreq>${p.changefreq}</changefreq>
     <priority>${p.priority}</priority>
   </url>`
-    )
-    .join("")}
+          )
+          .join("\n");
+
+        const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+${urlEntries}
 </urlset>`;
 
         return new Response(xml, {
           headers: {
-            "Content-Type": "application/xml",
+            "Content-Type": "application/xml; charset=utf-8",
             "Cache-Control": "public, max-age=3600, s-maxage=18000",
           },
         });

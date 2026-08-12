@@ -1,5 +1,16 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute } from '@tanstack/react-router';
 import { getProductionOrigin } from "@/lib/origin";
+import { supabase } from "@/integrations/supabase/client";
+
+function escapeXml(str: string): string {
+  if (!str) return "";
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
 
 export const Route = createFileRoute("/sitemap-categories.xml")({
   server: {
@@ -10,7 +21,7 @@ export const Route = createFileRoute("/sitemap-categories.xml")({
         const urls: { loc: string; lastmod: string; priority: string }[] = [];
 
         try {
-          // Fetch flat taxonomy tables without invalid schema columns
+          // Fetch flat taxonomy tables
           const [tRes, cRes, sRes, fRes] = await Promise.all([
             supabase.from("product_types" as any).select("id, slug, created_at"),
             supabase.from("categories" as any).select("id, type_id, slug, created_at"),
@@ -56,7 +67,7 @@ export const Route = createFileRoute("/sitemap-categories.xml")({
             const type = cat ? typeMap.get(cat.type_id) : null;
             if (type?.slug && cat?.slug && s.slug) {
               urls.push({
-                loc: `${origin}/${type.slug}/${cat.slug}/${encodeURIComponent(s.slug)}`,
+                loc: `${origin}/${type.slug}/${cat.slug}/${s.slug}`,
                 lastmod: s.created_at || now,
                 priority: "0.8",
               });
@@ -72,13 +83,13 @@ export const Route = createFileRoute("/sitemap-categories.xml")({
 
             if (type?.slug && cat?.slug && sub?.slug) {
               urls.push({
-                loc: `${origin}/${type.slug}/${cat.slug}/${encodeURIComponent(sub.slug)}/${encodeURIComponent(f.slug)}`,
+                loc: `${origin}/${type.slug}/${cat.slug}/${sub.slug}/${f.slug}`,
                 lastmod: f.created_at || now,
                 priority: "0.75",
               });
             } else if (type?.slug && cat?.slug) {
               urls.push({
-                loc: `${origin}/${type.slug}/${cat.slug}/${encodeURIComponent(f.slug)}`,
+                loc: `${origin}/${type.slug}/${cat.slug}/${f.slug}`,
                 lastmod: f.created_at || now,
                 priority: "0.75",
               });
@@ -88,19 +99,20 @@ export const Route = createFileRoute("/sitemap-categories.xml")({
           console.error("Failed to generate sitemap-categories:", err);
         }
 
-        const xml = `<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  ${urls
-    .map(
-      (u) => `
-  <url>
-    <loc>${u.loc.replace(/&/g, "&amp;")}</loc>
+        const urlEntries = urls
+          .map(
+            (u) => `  <url>
+    <loc>${escapeXml(u.loc)}</loc>
     <lastmod>${u.lastmod}</lastmod>
     <changefreq>daily</changefreq>
     <priority>${u.priority}</priority>
   </url>`
-    )
-    .join("")}
+          )
+          .join("\n");
+
+        const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+${urlEntries}
 </urlset>`;
 
         return new Response(xml, {
