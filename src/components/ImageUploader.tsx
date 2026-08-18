@@ -1,45 +1,61 @@
 import { useRef, useState, useCallback } from "react";
+import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { UploadCloud, Loader2, X, Star, Download, RefreshCw, Crop } from "lucide-react";
-import { deleteCloudinaryImage } from "@/lib/cloudinary";
+import { UploadCloud, Loader2, X, Star, Download, RefreshCw, Crop, AlertCircle } from "lucide-react";
+import { uploadProductImageServer, formatCloudinaryUrl } from "@/lib/upload-server";
 
 export function publicImageUrl(path: string | null | undefined): string | null {
   if (!path) return null;
-  if (path.startsWith("http://") || path.startsWith("https://")) return path;
-  // Fallback to legacy Supabase storage url if it's a relative path key
+  if (path.startsWith("http://") || path.startsWith("https://")) {
+    return formatCloudinaryUrl(path);
+  }
   const BUCKET = "product-images";
   const { data } = supabase.storage.from(BUCKET).getPublicUrl(path);
   return data.publicUrl;
 }
 
-async function uploadOne(file: File, productId?: string): Promise<string> {
-  const cloudName = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
-  const uploadPreset = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET;
-
-  if (!cloudName || !uploadPreset) {
-    throw new Error("Missing Cloudinary configuration (VITE_CLOUDINARY_CLOUD_NAME / VITE_CLOUDINARY_UPLOAD_PRESET)");
+/**
+ * Normalizes device photos (e.g. Samsung HEIC / high resolution camera photos)
+ * into standard JPEG blobs prior to upload.
+ */
+async function normalizeFileForUpload(file: File): Promise<File> {
+  const isHeic = /heic|heif/i.test(file.name) || /heic|heif/i.test(file.type);
+  if (!isHeic && file.type.startsWith("image/") && file.size < 6 * 1024 * 1024) {
+    return file;
   }
-
-  const formData = new FormData();
-  formData.append("file", file);
-  formData.append("upload_preset", uploadPreset);
-  if (productId) {
-    formData.append("folder", `products/${productId}`);
+  try {
+    if (typeof window !== "undefined" && "createImageBitmap" in window) {
+      const bitmap = await createImageBitmap(file);
+      const canvas = document.createElement("canvas");
+      let width = bitmap.width;
+      let height = bitmap.height;
+      const maxDim = 2560;
+      if (width > maxDim || height > maxDim) {
+        if (width > height) {
+          height = Math.round((height * maxDim) / width);
+          width = maxDim;
+        } else {
+          width = Math.round((width * maxDim) / height);
+          height = maxDim;
+        }
+      }
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d");
+      if (ctx) {
+        ctx.drawImage(bitmap, 0, 0, width, height);
+        const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.92));
+        if (blob) {
+          const cleanName = file.name.replace(/\.[^/.]+$/, "") + ".jpg";
+          return new File([blob], cleanName, { type: "image/jpeg" });
+        }
+      }
+    }
+  } catch (e) {
+    console.warn("Client-side image normalization notice:", e);
   }
-
-  const res = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
-    method: "POST",
-    body: formData,
-  });
-
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Cloudinary upload failed: ${text}`);
-  }
-
-  const data = await res.json();
-  return data.secure_url;
+  return file;
 }
 
 /**
@@ -63,27 +79,47 @@ export function ImageUploader({
   const cameraRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [statusText, setStatusText] = useState("");
+
+  const uploadServer = useServerFn(uploadProductImageServer);
 
   const handleFiles = useCallback(
     async (files: FileList | File[]) => {
-      const list = Array.from(files).filter((f) => f.type.startsWith("image/"));
+      const list = Array.from(files).filter(
+        (f) => !f.type || f.type.startsWith("image/") || /\.(jpg|jpeg|png|webp|heic|heif)$/i.test(f.name)
+      );
       if (list.length === 0) return;
       setBusy(true);
       const uploaded: string[] = [];
-      for (const f of list) {
+
+      for (let i = 0; i < list.length; i++) {
+        const rawFile = list[i];
         try {
-          uploaded.push(await uploadOne(f, productId));
+          setStatusText(`Normalizing image format (${i + 1}/${list.length})…`);
+          const fileToUpload = await normalizeFileForUpload(rawFile);
+
+          setStatusText(`Uploading (${i + 1}/${list.length})…`);
+          const formData = new FormData();
+          formData.append("file", fileToUpload);
+          if (productId) formData.append("productId", productId);
+
+          const res = await uploadServer({ data: formData });
+          if (res?.url) {
+            uploaded.push(formatCloudinaryUrl(res.url));
+          }
         } catch (e: any) {
           toast.error(`Upload failed: ${e.message || e}`);
         }
       }
+
       setBusy(false);
+      setStatusText("");
       if (uploaded.length) {
         await onUploaded(uploaded);
         toast.success(`Uploaded ${uploaded.length} image${uploaded.length > 1 ? "s" : ""}`);
       }
     },
-    [productId, onUploaded],
+    [productId, onUploaded, uploadServer],
   );
 
   return (
@@ -105,7 +141,7 @@ export function ImageUploader({
         ) : (
           <UploadCloud className="h-6 w-6 text-muted-foreground" />
         )}
-        <div className="text-sm font-medium">{label}</div>
+        <div className="text-sm font-medium">{busy ? (statusText || "Uploading…") : label}</div>
         <div className="text-xs text-muted-foreground">
           Drag & drop, or use the buttons below
         </div>
@@ -130,7 +166,7 @@ export function ImageUploader({
         <input
           ref={inputRef}
           type="file"
-          accept="image/*"
+          accept="image/*,.heic,.heif"
           multiple={multiple}
           className="hidden"
           onChange={(e) => e.target.files && handleFiles(e.target.files)}
@@ -138,7 +174,7 @@ export function ImageUploader({
         <input
           ref={cameraRef}
           type="file"
-          accept="image/*"
+          accept="image/*,.heic,.heif"
           capture="environment"
           className="hidden"
           onChange={(e) => e.target.files && handleFiles(e.target.files)}
@@ -148,7 +184,7 @@ export function ImageUploader({
   );
 }
 
-/** Small badge/actions bar for an image tile. */
+/** Small badge/actions bar for an image tile with load error handling. */
 export function ImageTile({
   url,
   onDelete,
@@ -168,9 +204,35 @@ export function ImageTile({
   isPrimary?: boolean;
   badge?: string;
 }) {
+  const [loadFailed, setLoadFailed] = useState(false);
+  const formattedUrl = formatCloudinaryUrl(url);
+
   return (
     <div className="relative overflow-hidden rounded-lg border border-border bg-card shadow-xs group">
-      <img src={url} alt="" className="aspect-square w-full object-cover" />
+      {loadFailed ? (
+        <div className="aspect-square w-full flex flex-col items-center justify-center p-4 bg-muted/30 text-center space-y-2">
+          <AlertCircle className="h-6 w-6 text-amber-500" />
+          <span className="text-xs font-semibold text-foreground">Image Decode Failure</span>
+          <p className="text-[10px] text-muted-foreground">The image format or network request was interrupted.</p>
+          {onReplace && (
+            <button
+              type="button"
+              onClick={onReplace}
+              className="mt-1 rounded bg-primary px-2.5 py-1 text-[10px] font-bold text-white hover:bg-primary/90"
+            >
+              Re-select Image
+            </button>
+          )}
+        </div>
+      ) : (
+        <img
+          src={formattedUrl}
+          alt=""
+          onError={() => setLoadFailed(true)}
+          className="aspect-square w-full object-cover"
+        />
+      )}
+
       {badge && (
         <span className="absolute left-1.5 top-1.5 rounded-full bg-black/60 px-2 py-0.5 text-[10px] uppercase tracking-wider text-white backdrop-blur">
           {badge}
@@ -182,7 +244,7 @@ export function ImageTile({
         </span>
       )}
       <div className="flex flex-wrap items-center gap-1 border-t border-border bg-card/90 p-1.5 backdrop-blur">
-        {onEdit && (
+        {onEdit && !loadFailed && (
           <button
             type="button"
             onClick={onEdit}
@@ -202,7 +264,7 @@ export function ImageTile({
             <RefreshCw className="h-3 w-3" />
           </button>
         )}
-        <a href={url} download target="_blank" rel="noreferrer" className="rounded border border-border px-1.5 py-1 text-[10px] hover:border-primary" title="Download">
+        <a href={formattedUrl} download target="_blank" rel="noreferrer" className="rounded border border-border px-1.5 py-1 text-[10px] hover:border-primary" title="Download">
           <Download className="h-3 w-3" />
         </a>
         {onRegenerate && (
