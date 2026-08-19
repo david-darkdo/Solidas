@@ -84,3 +84,66 @@ export const uploadProductImageServer = createServerFn({ method: "POST" })
 
     return { url: urlData.publicUrl };
   });
+
+export const uploadHeroVideoServer = createServerFn({ method: "POST" })
+  .validator((data: FormData) => data)
+  .handler(async ({ data }) => {
+    const file = data.get("file");
+
+    if (!(file instanceof File) || file.size === 0) {
+      throw new Error("No video file provided");
+    }
+
+    // 1. Try Signed Cloudinary Video Upload
+    if (CLOUDINARY_CLOUD_NAME && CLOUDINARY_API_KEY && CLOUDINARY_API_SECRET) {
+      try {
+        const timestamp = Math.floor(Date.now() / 1000).toString();
+        const folder = "hero-videos";
+        const sigStr = `folder=${folder}&timestamp=${timestamp}${CLOUDINARY_API_SECRET}`;
+        const signature = await sha1Hex(sigStr);
+
+        const fd = new FormData();
+        fd.append("file", file);
+        fd.append("api_key", CLOUDINARY_API_KEY);
+        fd.append("timestamp", timestamp);
+        fd.append("folder", folder);
+        fd.append("signature", signature);
+
+        const res = await fetch(
+          `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/video/upload`,
+          { method: "POST", body: fd }
+        );
+
+        const json: any = await res.json();
+        if (res.ok && json?.secure_url) {
+          return { url: json.secure_url };
+        }
+        console.warn("Signed Cloudinary video upload warning:", json);
+      } catch (cErr) {
+        console.warn("Cloudinary signed video upload exception:", cErr);
+      }
+    }
+
+    // 2. Fallback to Supabase Storage
+    const arrayBuffer = await file.arrayBuffer();
+    const buffer = new Uint8Array(arrayBuffer);
+    const ext = (file.name.split(".").pop() || "mp4").toLowerCase();
+    const filename = `hero-videos/${Date.now()}-${Math.random().toString(36).substring(2, 8)}.${ext}`;
+
+    const { error: upErr } = await supabase.storage
+      .from("product-images")
+      .upload(filename, buffer, {
+        contentType: file.type || "video/mp4",
+        upsert: true,
+      });
+
+    if (upErr) {
+      throw new Error(`Video upload failed: ${upErr.message}`);
+    }
+
+    const { data: urlData } = supabase.storage
+      .from("product-images")
+      .getPublicUrl(filename);
+
+    return { url: urlData.publicUrl };
+  });

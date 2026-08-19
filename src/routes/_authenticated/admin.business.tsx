@@ -1,7 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
 import { publicImageUrl } from "@/components/ImageUploader";
+import { uploadHeroVideoServer } from "@/lib/upload-server";
 import { useAuth } from "@/hooks/use-auth";
 import { toast } from "sonner";
 import {
@@ -25,32 +27,6 @@ import {
   HelpCircle,
   FileCheck
 } from "lucide-react";
-
-async function uploadVideoFile(file: File): Promise<string> {
-  const cloudName = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
-  const uploadPreset = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET;
-
-  if (!cloudName || !uploadPreset) {
-    throw new Error("Missing Cloudinary configuration (VITE_CLOUDINARY_CLOUD_NAME / VITE_CLOUDINARY_UPLOAD_PRESET)");
-  }
-
-  const formData = new FormData();
-  formData.append("file", file);
-  formData.append("upload_preset", uploadPreset);
-
-  const res = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/video/upload`, {
-    method: "POST",
-    body: formData,
-  });
-
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Video upload failed: ${text}`);
-  }
-
-  const data = await res.json();
-  return data.secure_url;
-}
 
 export const Route = createFileRoute("/_authenticated/admin/business")({
   head: () => ({ meta: [{ title: "Business Operations — Admin" }] }),
@@ -111,6 +87,7 @@ type BusinessTab = "pipeline" | "collections" | "experience";
 
 function BusinessOpsPage() {
   const { isAdmin, loading, user } = useAuth();
+  const uploadVideoFn = useServerFn(uploadHeroVideoServer);
   const [activeTab, setActiveTab] = useState<BusinessTab>("pipeline");
   const [inquiries, setInquiries] = useState<Inquiry[]>([]);
   const [collections, setCollections] = useState<CollectionRow[]>([]);
@@ -606,10 +583,13 @@ function BusinessOpsPage() {
                     const file = e.target.files?.[0];
                     if (!file) return;
                     
-                    const uploadToast = toast.loading("Uploading video to Cloudinary...", { duration: 0 });
+                    const uploadToast = toast.loading("Uploading hero video...", { duration: 0 });
                     try {
-                      const url = await uploadVideoFile(file);
-                      setNewVideoUrl(url);
+                      const formData = new FormData();
+                      formData.append("file", file);
+                      const res = await uploadVideoFn({ data: formData });
+                      if (!res?.url) throw new Error("No URL returned from video upload");
+                      setNewVideoUrl(res.url);
                       toast.dismiss(uploadToast);
                       toast.success("Video uploaded! Click 'Add' to activate.");
                     } catch (err: any) {
@@ -671,7 +651,7 @@ function BusinessOpsPage() {
                   <label className="block text-xs">
                     <span className="text-muted-foreground">Icon Identifier</span>
                     <select value={editingTrust.icon_name} onChange={(e) => setEditingTrust({ ...editingTrust, icon_name: e.target.value })} className="mt-1 w-full rounded border border-border bg-background px-2.5 py-1">
-                      {["Shield", "Truck", "CreditCard", "Headphones", "FileCheck", "HelpCircle"].map(i => <option key={i} value={i}>{i}</option>)}
+                      {[\"Shield\", \"Truck\", \"CreditCard\", \"Headphones\", \"FileCheck\", \"HelpCircle\"].map(i => <option key={i} value={i}>{i}</option>)}
                     </select>
                   </label>
                 </div>
@@ -695,7 +675,7 @@ function BusinessOpsPage() {
                   <label className="block text-[10px] text-muted-foreground">
                     Icon Name
                     <select value={newTrust.icon_name} onChange={(e) => setNewTrust({ ...newTrust, icon_name: e.target.value })} className="mt-1 w-full rounded border border-border bg-background px-2.5 py-1">
-                      {["Shield", "Truck", "CreditCard", "Headphones", "FileCheck", "HelpCircle"].map(i => <option key={i} value={i}>{i}</option>)}
+                      {[\"Shield\", \"Truck\", \"CreditCard\", \"Headphones\", \"FileCheck\", \"HelpCircle\"].map(i => <option key={i} value={i}>{i}</option>)}
                     </select>
                   </label>
                 </div>
@@ -720,8 +700,8 @@ function BusinessOpsPage() {
                   </div>
 
                   <div className="flex items-center gap-1 shrink-0 ml-4">
-                    <button onClick={() => reorderTrust(t, "up")} disabled={idx === 0} className="p-1 rounded border border-border hover:bg-muted disabled:opacity-30"><ArrowUp className="h-3 w-3" /></button>
-                    <button onClick={() => reorderTrust(t, "down")} disabled={idx === trusts.length - 1} className="p-1 rounded border border-border hover:bg-muted disabled:opacity-30"><ArrowDown className="h-3 w-3" /></button>
+                    <button onClick={() => reorderTrust(t, \"up\")} disabled={idx === 0} className="p-1 rounded border border-border hover:bg-muted disabled:opacity-30"><ArrowUp className="h-3 w-3" /></button>
+                    <button onClick={() => reorderTrust(t, \"down\")} disabled={idx === trusts.length - 1} className="p-1 rounded border border-border hover:bg-muted disabled:opacity-30"><ArrowDown className="h-3 w-3" /></button>
                     <button onClick={() => setEditingTrust(t)} className="p-1.5 rounded hover:bg-muted transition text-muted-foreground hover:text-foreground"><Edit className="h-3.5 w-3.5" /></button>
                     <button onClick={() => deleteTrustFeature(t.id)} className="p-1.5 rounded text-destructive hover:bg-destructive/5 transition"><Trash2 className="h-3.5 w-3.5" /></button>
                   </div>
@@ -738,7 +718,7 @@ function BusinessOpsPage() {
           onClose={() => setSelected(null)}
           onStatus={(s) => updateInquiryStatus(selected.id, s)}
           onNotes={(n) => updateInquiryNotes(selected.id, n)}
-          profile={profilesById[selected.assigned_admin_id ?? ""] ?? null}
+          profile={profilesById[selected.assigned_admin_id ?? \"\"] ?? null}
         />
       )}
     </div>
@@ -776,152 +756,4 @@ function NotesCell({ value, onSave }: { value: string; onSave: (v: string) => vo
   );
 }
 
-function InquiryDrawer({
-  inquiry,
-  onClose,
-  onStatus,
-  onNotes,
-  profile,
-}: {
-  inquiry: Inquiry;
-  onClose: () => void;
-  onStatus: (s: Status) => void;
-  onNotes: (n: string) => void;
-  profile: { email: string | null; full_name: string | null } | null;
-}) {
-  const [notes, setNotes] = useState(inquiry.internal_notes ?? "");
-  const [collection, setCollection] = useState<{ id: string; created_at: string } | null>(null);
-  const [products, setProducts] = useState<Array<{ id: string; name: string; code: string; image_url: string | null }>>([]);
-
-  useEffect(() => setNotes(inquiry.internal_notes ?? ""), [inquiry.id, inquiry.internal_notes]);
-
-  useEffect(() => {
-    (async () => {
-      const { data: col } = await supabase
-        .from("collections")
-        .select("id, created_at")
-        .eq("id", inquiry.collection_id)
-        .maybeSingle();
-      setCollection(col ?? null);
-      const { data: items } = await supabase
-        .from("collection_items")
-        .select("product_id")
-        .eq("collection_id", inquiry.collection_id);
-      const ids = (items ?? []).map((i: { product_id: string }) => i.product_id);
-      if (!ids.length) return setProducts([]);
-      const { data: prods } = await supabase
-        .from("products")
-        .select("id,name,code,image_url")
-        .in("id", ids);
-      setProducts((prods ?? []) as Array<{ id: string; name: string; code: string; image_url: string | null }>);
-    })();
-  }, [inquiry.collection_id]);
-
-  return (
-    <div className="fixed inset-0 z-50 flex">
-      <div className="flex-1 bg-black/50" onClick={onClose} />
-      <aside className="flex h-full w-full max-w-md flex-col overflow-y-auto border-l border-border bg-background">
-        <div className="sticky top-0 flex items-center justify-between border-b border-border bg-background px-4 py-3">
-          <h3 className="font-display text-lg font-semibold">Inquiry Details</h3>
-          <button onClick={onClose} className="rounded-md p-1 hover:bg-surface-2"><X className="h-4 w-4" /></button>
-        </div>
-        <div className="space-y-5 p-4 text-sm">
-          <Section title="Customer Information">
-            <Row label="Name" value={inquiry.customer_name} />
-            <Row label="Email" value={inquiry.customer_email} />
-            <Row label="Phone" value={inquiry.customer_phone} />
-            <Row label="WhatsApp" value={inquiry.whatsapp_number} />
-          </Section>
-
-          <Section title="Collection Information">
-            <Row label="Collection ID" value={inquiry.collection_id} mono />
-            <Row label="Total Products" value={String(products.length)} />
-            <Row
-              label="Created"
-              value={collection?.created_at ? new Date(collection.created_at).toLocaleString() : "—"}
-            />
-          </Section>
-
-          <Section title="Collection Preview">
-            {products.length === 0 ? (
-              <p className="text-xs text-muted-foreground">No products in this collection.</p>
-            ) : (
-              <ul className="grid grid-cols-3 gap-2">
-                {products.map((p) => (
-                  <li key={p.id} className="overflow-hidden rounded-md border border-border bg-card">
-                    {publicImageUrl(p.image_url) ? (
-                      <img src={publicImageUrl(p.image_url)!} alt={p.name} className="h-16 w-full object-cover" loading="lazy" />
-                    ) : (
-                      <div className="h-16 w-full bg-muted" />
-                    )}
-                    <div className="p-1 text-[10px]">
-                      <div className="truncate font-medium">{p.name}</div>
-                      <div className="truncate text-muted-foreground">{p.code}</div>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Section>
-
-          <Section title="Inquiry Status">
-            <div className="flex items-center gap-2">
-              <select
-                value={inquiry.inquiry_status}
-                onChange={(e) => onStatus(e.target.value as Status)}
-                className="rounded-md border border-border bg-background px-2 py-1.5 text-sm"
-              >
-                {STATUSES.map((s) => (
-                  <option key={s} value={s}>{s}</option>
-                ))}
-              </select>
-              {inquiry.last_contacted_at && (
-                <span className="text-[11px] text-muted-foreground">
-                  last · {new Date(inquiry.last_contacted_at).toLocaleString()}
-                </span>
-              )}
-            </div>
-            {profile && (
-              <p className="mt-2 text-xs text-muted-foreground">Assigned · {profile.full_name || profile.email}</p>
-            )}
-          </Section>
-
-          <Section title="Internal Notes">
-            <textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              rows={4}
-              className="w-full rounded-md border border-border bg-background p-2 text-sm"
-              placeholder="Internal team notes…"
-            />
-            <button
-              disabled={notes === (inquiry.internal_notes ?? "")}
-              onClick={() => onNotes(notes)}
-              className="mt-2 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-            >
-              Save notes
-            </button>
-          </Section>
-        </div>
-      </aside>
-    </div>
-  );
-}
-
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <h4 className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{title}</h4>
-      <div className="space-y-1">{children}</div>
-    </div>
-  );
-}
-
-function Row({ label, value, mono }: { label: string; value: string | null; mono?: boolean }) {
-  return (
-    <div className="flex gap-2 text-xs">
-      <span className="w-24 shrink-0 text-muted-foreground">{label}</span>
-      <span className={`flex-1 break-all ${mono ? "font-mono" : ""}`}>{value || "—"}</span>
-    </div>
-  );
-}
+function InquiryDrawer({\n  inquiry,\n  onClose,\n  onStatus,\n  onNotes,\n  profile,\n}: {\n  inquiry: Inquiry;\n  onClose: () => void;\n  onStatus: (s: Status) => void;\n  onNotes: (n: string) => void;\n  profile: { email: string | null; full_name: string | null } | null;\n}) {\n  const [notes, setNotes] = useState(inquiry.internal_notes ?? \"\");\n  const [collection, setCollection] = useState<{ id: string; created_at: string } | null>(null);\n  const [products, setProducts] = useState<Array<{ id: string; name: string; code: string; image_url: string | null }>>([]);\n\n  useEffect(() => setNotes(inquiry.internal_notes ?? \"\"), [inquiry.id, inquiry.internal_notes]);\n\n  useEffect(() => {\n    (async () => {\n      const { data: col } = await supabase\n        .from(\"collections\")\n        .select(\"id, created_at\")\n        .eq(\"id\", inquiry.collection_id)\n        .maybeSingle();\n      setCollection(col ?? null);\n      const { data: items } = await supabase\n        .from(\"collection_items\")\n        .select(\"product_id\")\n        .eq(\"collection_id\", inquiry.collection_id);\n      const ids = (items ?? []).map((i: { product_id: string }) => i.product_id);\n      if (!ids.length) return setProducts([]);\n      const { data: prods } = await supabase\n        .from(\"products\")\n        .select(\"id,name,code,image_url\")\n        .in(\"id\", ids);\n      setProducts((prods ?? []) as Array<{ id: string; name: string; code: string; image_url: string | null }>);\n    })();\n  }, [inquiry.collection_id]);\n\n  return (\n    <div className=\"fixed inset-0 z-50 flex\">\n      <div className=\"flex-1 bg-black/50\" onClick={onClose} />\n      <aside className=\"flex h-full w-full max-w-md flex-col overflow-y-auto border-l border-border bg-background\">\n        <div className=\"sticky top-0 flex items-center justify-between border-b border-border bg-background px-4 py-3\">\n          <h3 className=\"font-display text-lg font-semibold\">Inquiry Details</h3>\n          <button onClick={onClose} className=\"rounded-md p-1 hover:bg-surface-2\"><X className=\"h-4 w-4\" /></button>\n        </div>\n        <div className=\"space-y-5 p-4 text-sm\">\n          <Section title=\"Customer Information\">\n            <Row label=\"Name\" value={inquiry.customer_name} />\n            <Row label=\"Email\" value={inquiry.customer_email} />\n            <Row label=\"Phone\" value={inquiry.customer_phone} />\n            <Row label=\"WhatsApp\" value={inquiry.whatsapp_number} />\n          </Section>\n\n          <Section title=\"Collection Information\">\n            <Row label=\"Collection ID\" value={inquiry.collection_id} mono />\n            <Row label=\"Total Products\" value={String(products.length)} />\n            <Row\n              label=\"Created\"\n              value={collection?.created_at ? new Date(collection.created_at).toLocaleString() : \"—\"}\n            />\n          </Section>\n\n          <Section title=\"Collection Preview\">\n            {products.length === 0 ? (\n              <p className=\"text-xs text-muted-foreground\">No products in this collection.</p>\n            ) : (\n              <ul className=\"grid grid-cols-3 gap-2\">\n                {products.map((p) => (\n                  <li key={p.id} className=\"overflow-hidden rounded-md border border-border bg-card\">\n                    {publicImageUrl(p.image_url) ? (\n                      <img src={publicImageUrl(p.image_url)!} alt=\"\" className=\"aspect-square w-full object-cover\" />\n                    ) : (\n                      <div className=\"aspect-square w-full bg-muted flex items-center justify-center text-[10px] text-muted-foreground\">No image</div>\n                    )}\n                    <div className=\"p-1 text-[10px]\">\n                      <div className=\"truncate font-semibold\">{p.name}</div>\n                      <div className=\"truncate text-muted-foreground font-mono\">{p.code}</div>\n                    </div>\n                  </li>\n                ))}\n              </ul>\n            )}\n          </Section>\n\n          <Section title=\"Assigned Admin\">\n            <Row label=\"Admin Email\" value={profile?.email} />\n            <Row label=\"Admin Name\" value={profile?.full_name} />\n          </Section>\n\n          <Section title=\"Inquiry Status\">\n            <div className=\"flex flex-wrap gap-1.5\">\n              {STATUSES.map((s) => (\n                <button\n                  key={s}\n                  onClick={() => onStatus(s)}\n                  className={`rounded-md px-2.5 py-1 text-xs font-semibold uppercase transition ${\n                    inquiry.inquiry_status === s\n                      ? \"bg-primary text-primary-foreground shadow-xs\"\n                      : \"border border-border bg-card hover:bg-surface-2\"\n                  }`}\n                >\n                  {s}\n                </button>\n              ))}\n            </div>\n          </Section>\n\n          <Section title=\"Internal Notes\">\n            <textarea\n              value={notes}\n              onChange={(e) => setNotes(e.target.value)}\n              rows={4}\n              placeholder=\"Add internal notes about this client / pricing deal…\"\n              className=\"w-full rounded-lg border border-border bg-background p-2.5 text-xs outline-none focus:border-primary\"\n            />\n            <button\n              onClick={() => onNotes(notes)}\n              className=\"mt-2 rounded-lg bg-primary px-4 py-2 text-xs font-bold text-primary-foreground hover:bg-primary/95 shadow-xs transition\"\n            >\n              Save Notes\n            </button>\n          </Section>\n        </div>\n      </aside>\n    </div>\n  );\n}\n\nfunction Section({ title, children }: { title: string; children: React.ReactNode }) {\n  return (\n    <div className=\"space-y-2\">\n      <h4 className=\"text-xs font-bold uppercase tracking-wider text-muted-foreground\">{title}</h4>\n      {children}\n    </div>\n  );\n}\n\nfunction Row({ label, value, mono }: { label: string; value: string | null | undefined; mono?: boolean }) {\n  return (\n    <div className=\"flex justify-between py-1 border-b border-border/40 text-xs\">\n      <span className=\"text-muted-foreground\">{label}</span>\n      <span className={`font-medium ${mono ? \"font-mono text-[11px]\" : \"\"}`}>{value || \"—\"}</span>\n    </div>\n  );\n}\n
