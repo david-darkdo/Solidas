@@ -3,7 +3,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { UploadCloud, Loader2, X, Star, Download, RefreshCw, Crop, AlertCircle } from "lucide-react";
-import { uploadProductImageServer, formatCloudinaryUrl } from "@/lib/upload-server";
+import { getCloudinarySignatureServer, uploadLargeMediaFileClient, formatCloudinaryUrl } from "@/lib/upload-server";
 
 export function publicImageUrl(path: string | null | undefined): string | null {
   if (!path) return null;
@@ -81,7 +81,7 @@ export function ImageUploader({
   const [busy, setBusy] = useState(false);
   const [statusText, setStatusText] = useState("");
 
-  const uploadServer = useServerFn(uploadProductImageServer);
+  const getSignatureFn = useServerFn(getCloudinarySignatureServer);
 
   const handleFiles = useCallback(
     async (files: FileList | File[]) => {
@@ -98,14 +98,19 @@ export function ImageUploader({
           setStatusText(`Normalizing image format (${i + 1}/${list.length})…`);
           const fileToUpload = await normalizeFileForUpload(rawFile);
 
-          setStatusText(`Uploading (${i + 1}/${list.length})…`);
-          const formData = new FormData();
-          formData.append("file", fileToUpload);
-          if (productId) formData.append("productId", productId);
-
-          const res = await uploadServer({ data: formData });
-          if (res?.url) {
-            uploaded.push(formatCloudinaryUrl(res.url));
+          setStatusText(`Uploading image (${i + 1}/${list.length})…`);
+          const folder = productId ? `products/${productId}` : "products";
+          const url = await uploadLargeMediaFileClient({
+            file: fileToUpload,
+            folder,
+            resourceType: "image",
+            getSignatureFn,
+            onProgress: (pct) => {
+              setStatusText(`Uploading image (${i + 1}/${list.length}) ${pct}%…`);
+            },
+          });
+          if (url) {
+            uploaded.push(formatCloudinaryUrl(url));
           }
         } catch (e: any) {
           toast.error(`Upload failed: ${e.message || e}`);
@@ -119,7 +124,7 @@ export function ImageUploader({
         toast.success(`Uploaded ${uploaded.length} image${uploaded.length > 1 ? "s" : ""}`);
       }
     },
-    [productId, onUploaded, uploadServer],
+    [productId, onUploaded, getSignatureFn],
   );
 
   return (
