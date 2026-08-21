@@ -83,7 +83,7 @@ type TrustFeature = {
   created_at: string;
 };
 
-type BusinessTab = "pipeline" | "collections" | "experience";
+type BusinessTab = "pipeline" | "collections" | "experience" | "home_videos";
 
 function BusinessOpsPage() {
   const { isAdmin, loading, user } = useAuth();
@@ -105,6 +105,11 @@ function BusinessOpsPage() {
     title: "",
     description: "",
   });
+
+  // Showcase / Home Videos states
+  const [showcaseVideos, setShowcaseVideos] = useState<any[]>([]);
+  const [newShowcaseUrl, setNewShowcaseUrl] = useState("");
+  const [newShowcaseTitle, setNewShowcaseTitle] = useState("");
   const [busy, setBusy] = useState(false);
 
   // Audit logger helper
@@ -132,14 +137,16 @@ function BusinessOpsPage() {
         { data: items },
         { data: profs },
         { data: vids },
-        { data: trs }
+        { data: trs },
+        { data: scVids }
       ] = await Promise.all([
         supabase.from("whatsapp_inquiries").select("*").order("created_at", { ascending: false }),
         supabase.from("collections").select("*").order("created_at", { ascending: false }),
         supabase.from("collection_items").select("collection_id"),
         supabase.from("profiles").select("auth_id, email, full_name"),
         supabase.from("hero_videos" as any).select("*").order("order_index", { ascending: true }),
-        supabase.from("trust_features" as any).select("*").order("order_index", { ascending: true })
+        supabase.from("trust_features" as any).select("*").order("order_index", { ascending: true }),
+        supabase.from("showcase_videos" as any).select("*").order("order_index", { ascending: true })
       ]);
 
       const counts = new Map<string, number>();
@@ -163,6 +170,7 @@ function BusinessOpsPage() {
       );
       setVideos((vids ?? []) as any);
       setTrusts((trs ?? []) as any);
+      setShowcaseVideos((scVids ?? []) as any);
       setLoaded(true);
     } catch (err: any) {
       toast.error((err as any).message);
@@ -375,6 +383,76 @@ function BusinessOpsPage() {
     }
   };
 
+  // SHOWCASE / HOME VIDEOS MANAGER
+  const addShowcaseVideo = async () => {
+    if (!newShowcaseUrl.trim()) return toast.error("Please upload or provide a video URL");
+    setBusy(true);
+    try {
+      const nextIndex = showcaseVideos.length;
+      const { error } = await supabase.from("showcase_videos" as any).insert({
+        url: newShowcaseUrl.trim(),
+        title: newShowcaseTitle.trim() || null,
+        order_index: nextIndex,
+        is_active: true
+      });
+      if (error) throw error;
+      setNewShowcaseUrl("");
+      setNewShowcaseTitle("");
+      toast.success("Showcase video added successfully!");
+      await logAuditAction("add_showcase_video", { url: newShowcaseUrl.trim(), order_index: nextIndex });
+      loadAll();
+    } catch (err: any) {
+      toast.error(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const deleteShowcaseVideo = async (id: string) => {
+    if (!confirm("Delete this showcase video? This will remove it from the homepage continuous slider.")) return;
+    try {
+      const { error } = await supabase.from("showcase_videos" as any).delete().eq("id", id);
+      if (error) throw error;
+      toast.success("Showcase video removed");
+      await logAuditAction("delete_showcase_video", { id });
+      loadAll();
+    } catch (err: any) {
+      toast.error(err.message);
+    }
+  };
+
+  const toggleShowcaseVideo = async (id: string, current: boolean) => {
+    try {
+      const { error } = await supabase.from("showcase_videos" as any).update({ is_active: !current }).eq("id", id);
+      if (error) throw error;
+      toast.success("Showcase video status updated");
+      await logAuditAction("toggle_showcase_video", { id, is_active: !current });
+      loadAll();
+    } catch (err: any) {
+      toast.error(err.message);
+    }
+  };
+
+  const reorderShowcaseVideo = async (video: any, direction: "up" | "down") => {
+    const idx = showcaseVideos.findIndex(v => v.id === video.id);
+    if (direction === "up" && idx === 0) return;
+    if (direction === "down" && idx === showcaseVideos.length - 1) return;
+
+    const swapIdx = direction === "up" ? idx - 1 : idx + 1;
+    const target = showcaseVideos[swapIdx];
+
+    try {
+      await Promise.all([
+        supabase.from("showcase_videos" as any).update({ order_index: target.order_index }).eq("id", video.id),
+        supabase.from("showcase_videos" as any).update({ order_index: video.order_index }).eq("id", target.id)
+      ]);
+      toast.success("Reordered showcase videos");
+      loadAll();
+    } catch (err: any) {
+      toast.error(err.message);
+    }
+  };
+
   if (loading || !loaded) {
     return <div className="container-app py-10 text-sm text-muted-foreground">Loading business operations…</div>;
   }
@@ -415,6 +493,14 @@ function BusinessOpsPage() {
             }`}
           >
             Experience Manager
+          </button>
+          <button
+            onClick={() => setActiveTab("home_videos")}
+            className={`rounded-md px-3.5 py-1.5 text-xs font-semibold capitalize transition ${
+              activeTab === "home_videos" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            Home Videos
           </button>
         </div>
       </div>
@@ -712,6 +798,128 @@ function BusinessOpsPage() {
                   </div>
                 </div>
               ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeTab === "home_videos" && (
+        <div className="rounded-xl border border-border bg-card p-6 space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-border pb-4 gap-2">
+            <div className="flex items-center gap-2">
+              <Tv className="h-5 w-5 text-[#1E82A6]" />
+              <div>
+                <h2 className="font-display text-lg font-bold text-foreground">Homepage Showcase Video Manager</h2>
+                <p className="text-xs text-muted-foreground">Upload and arrange video clips displayed in the continuous showcase slider on the homepage.</p>
+              </div>
+            </div>
+            <span className="rounded-full bg-[#1E82A6]/10 px-3 py-1 text-xs font-bold text-[#1E82A6] shrink-0 self-start sm:self-center">
+              {showcaseVideos.filter(v => v.is_active).length} Active Video{showcaseVideos.filter(v => v.is_active).length !== 1 ? "s" : ""}
+            </span>
+          </div>
+
+          <div className="grid gap-6 md:grid-cols-2">
+            {/* Upload Form Box */}
+            <div className="space-y-4 rounded-xl border border-border/80 bg-surface p-4">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-foreground">Add New Showcase Video</h3>
+              
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-[11px] font-semibold text-muted-foreground mb-1">Video Title / Caption (Optional)</label>
+                  <input
+                    value={newShowcaseTitle}
+                    onChange={(e) => setNewShowcaseTitle(e.target.value)}
+                    placeholder="e.g. Italian Marble Living Room Installation"
+                    className="w-full rounded-lg border border-border bg-background px-3.5 py-2 text-xs outline-none focus:border-[#1E82A6]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-muted-foreground mb-1">Video URL or Direct File Upload</label>
+                  <div className="flex gap-2">
+                    <input
+                      value={newShowcaseUrl}
+                      onChange={(e) => setNewShowcaseUrl(e.target.value)}
+                      placeholder="Paste background video URL (.mp4 / .webm / .mov)"
+                      className="flex-1 rounded-lg border border-border bg-background px-3.5 py-2 text-xs outline-none focus:border-[#1E82A6]"
+                    />
+                    <button
+                      disabled={busy || !newShowcaseUrl.trim()}
+                      onClick={addShowcaseVideo}
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-[#C0262D] px-4 py-2 text-xs font-bold text-white hover:bg-[#9A1B21] disabled:opacity-50 transition shadow-xs shrink-0"
+                    >
+                      <Plus className="h-4 w-4" /> Save Video
+                    </button>
+                  </div>
+                </div>
+
+                <div className="relative border-2 border-dashed border-border rounded-xl p-5 text-center bg-background/80 hover:bg-background transition">
+                  <input
+                    type="file"
+                    accept="video/mp4,video/webm,video/quicktime,video/*"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+
+                      const uploadToast = toast.loading("Uploading showcase video (0%)...", { duration: 0 });
+                      try {
+                        const url = await uploadLargeMediaFileClient({
+                          file,
+                          folder: "showcase-videos",
+                          resourceType: "video",
+                          getSignatureFn,
+                          onProgress: (pct) => {
+                            toast.loading(`Uploading showcase video (${pct}%)...`, { id: uploadToast });
+                          },
+                        });
+                        setNewShowcaseUrl(url);
+                        toast.dismiss(uploadToast);
+                        toast.success("Video uploaded! Click 'Save Video' to activate.");
+                      } catch (err: any) {
+                        toast.dismiss(uploadToast);
+                        toast.error(err.message || "Failed to upload video");
+                      }
+                    }}
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                  />
+                  <Tv className="mx-auto h-8 w-8 text-muted-foreground/60 mb-2" />
+                  <p className="text-xs font-bold text-foreground">Drag and drop video file here, or <span className="text-[#1E82A6] underline cursor-pointer">browse local files</span></p>
+                  <p className="text-[10px] text-muted-foreground mt-1">Supports MP4, WebM, MOV & high-definition video files (large files supported directly).</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Videos Playlist List */}
+            <div className="space-y-3 max-h-[450px] overflow-y-auto pr-1">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-foreground">Showcase Playlist ({showcaseVideos.length})</h3>
+              
+              {showcaseVideos.map((vid, idx) => (
+                <div key={vid.id} className="rounded-xl border border-border bg-background p-3.5 flex gap-3 items-center justify-between shadow-2xs group">
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-xs text-foreground">Showcase #{idx + 1}</span>
+                      {vid.title && <span className="text-xs font-medium text-muted-foreground truncate">— {vid.title}</span>}
+                      <span className={`rounded-full px-2 py-0.5 text-[9px] font-extrabold uppercase ${vid.is_active ? "bg-green-500/10 text-green-600" : "bg-muted text-muted-foreground"}`}>
+                        {vid.is_active ? "Active" : "Disabled"}
+                      </span>
+                    </div>
+                    <p className="text-[10px] font-mono text-muted-foreground truncate">{vid.url}</p>
+                  </div>
+
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button onClick={() => reorderShowcaseVideo(vid, "up")} disabled={idx === 0} className="p-1.5 rounded border border-border hover:bg-muted disabled:opacity-30" title="Move Up"><ArrowUp className="h-3.5 w-3.5" /></button>
+                    <button onClick={() => reorderShowcaseVideo(vid, "down")} disabled={idx === showcaseVideos.length - 1} className="p-1.5 rounded border border-border hover:bg-muted disabled:opacity-30" title="Move Down"><ArrowDown className="h-3.5 w-3.5" /></button>
+                    <button onClick={() => toggleShowcaseVideo(vid.id, vid.is_active)} className="rounded border border-border px-2.5 py-1 text-[10px] font-bold hover:bg-muted transition">Toggle</button>
+                    <button onClick={() => deleteShowcaseVideo(vid.id)} className="p-1.5 rounded text-destructive hover:bg-destructive/10 transition" title="Delete"><Trash2 className="h-4 w-4" /></button>
+                  </div>
+                </div>
+              ))}
+
+              {showcaseVideos.length === 0 && (
+                <div className="text-center py-12 border border-dashed border-border rounded-xl text-xs text-muted-foreground italic">
+                  No custom showcase videos added yet. Default architectural showcase videos will play on the homepage slider.
+                </div>
+              )}
             </div>
           </div>
         </div>
