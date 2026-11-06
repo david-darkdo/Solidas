@@ -28,9 +28,13 @@ function validateSearch(s: Record<string, unknown>): SearchParams {
 export const Route = createFileRoute("/search")({
   validateSearch: validateSearch,
   head: () => ({
+    links: [
+      { rel: "canonical", href: "https://solidas.com.ng/search" },
+    ],
     meta: [
-      { title: "Search — Stoneworks" },
-      { name: "description", content: "Search across the catalogue." },
+      { title: "Search Materials & Tiles | SOLIDAS" },
+      { name: "description", content: "Search across the Solidas Tiles and Marble catalogue for premium tiles, granite, marble, security doors, and sanitary ware." },
+      { name: "robots", content: "noindex, follow" },
     ],
   }),
   component: SearchPage,

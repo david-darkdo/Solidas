@@ -31,18 +31,24 @@ export const Route = createFileRoute("/collection/$id")({
     }
     return { imageUrl };
   },
-  head: ({ loaderData }) => {
-    const title = "Shared Project Collection — Enreach Concepts";
-    const desc = "Check out this curated building materials project quotation request on Enreach Concepts.";
-    const img = (loaderData as any)?.imageUrl || "https://enreachconcepts.com/logo.png";
+  head: ({ loaderData, params }: any) => {
+    const title = "Shared Project Collection | SOLIDAS";
+    const desc = "Check out this curated building materials project quotation request on Solidas Tiles and Marble.";
+    const img = loaderData?.imageUrl || "https://solidas.com.ng/icon-512.png";
+    const canonical = `https://solidas.com.ng/collection/${params.id}`;
     return {
+      links: [
+        { rel: "canonical", href: canonical }
+      ],
       meta: [
         { title: title },
         { name: "description", content: desc },
+        { name: "robots", content: "noindex, nofollow" },
         { property: "og:type", content: "website" },
         { property: "og:title", content: title },
         { property: "og:description", content: desc },
         { property: "og:image", content: img },
+        { property: "og:url", content: canonical },
         { name: "twitter:card", content: "summary_large_image" },
         { name: "twitter:title", content: title },
         { name: "twitter:description", content: desc },

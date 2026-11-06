@@ -13,7 +13,11 @@ export const Route = createFileRoute("/auth")({
     };
   },
   head: () => ({
-    meta: [{ title: "Sign in — Enreach Concepts" }],
+    links: [{ rel: "canonical", href: "https://solidas.com.ng/auth" }],
+    meta: [
+      { title: "Sign In / Register | SOLIDAS" },
+      { name: "robots", content: "noindex, nofollow" },
+    ],
   }),
   component: AuthPage,
 });

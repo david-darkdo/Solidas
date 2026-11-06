@@ -34,7 +34,13 @@ export const Route = createFileRoute("/collection")({
       autoPush: search.autoPush === "true" || search.autoPush === true ? true : undefined,
     };
   },
-  head: () => ({ meta: [{ title: "Active Project Workspace — Enreach Concepts" }] }),
+  head: () => ({
+    links: [{ rel: "canonical", href: "https://solidas.com.ng/collection" }],
+    meta: [
+      { title: "Project Quotation Workspace | SOLIDAS" },
+      { name: "robots", content: "noindex, nofollow" },
+    ],
+  }),
   component: CollectionPage,
 });
 
@@ -288,7 +294,7 @@ function CollectionPage() {
 
     // 1. Construct WhatsApp message synchronously (< 16ms)
     const messageParts = [
-      "Hello Enreach Concepts,",
+      "Hello SOLIDAS,",
       "",
       "I would like a quotation for my project.",
       "",
