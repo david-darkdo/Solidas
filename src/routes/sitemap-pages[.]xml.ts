@@ -20,9 +20,9 @@ export const Route = createFileRoute("/sitemap-pages.xml")({
 
         const pages = [
           { loc: `${origin}/`, priority: "1.0", changefreq: "daily" },
+          { loc: `${origin}/home`, priority: "0.9", changefreq: "daily" },
           { loc: `${origin}/contact`, priority: "0.8", changefreq: "monthly" },
-          { loc: `${origin}/search`, priority: "0.8", changefreq: "daily" },
-          { loc: `${origin}/favorites`, priority: "0.5", changefreq: "weekly" },
+          { loc: `${origin}/search`, priority: "0.7", changefreq: "daily" },
         ];
 
         const urlEntries = pages

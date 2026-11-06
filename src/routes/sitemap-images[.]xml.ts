@@ -26,12 +26,13 @@ export const Route = createFileRoute("/sitemap-images.xml")({
             .from("products" as any)
             .select("id, slug, name, alt_text, seo_description, image_url, generated_installed_image, generated_studio_image")
             .eq("status", "published")
-            .eq("hidden", false);
+            .eq("hidden", false)
+            .is("deleted_at", null);
 
           if (products) {
             for (const p of (products as any[])) {
               const productUrl = getCanonicalProductUrl(p, origin);
-              const title = p.name || "Enreach Concepts Product";
+              const title = p.name || "SOLIDAS Product";
               const caption = p.alt_text || p.seo_description || title;
 
               const rawImages = [p.image_url, p.generated_installed_image, p.generated_studio_image].filter(Boolean);
