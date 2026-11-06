@@ -1,17 +1,28 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { useAppSettings, waLink } from "@/lib/settings";
+import { getProductionOrigin } from "@/lib/origin";
 import { toast } from "sonner";
 import { Facebook, Instagram, Mail, MapPin, MessageCircle, Phone, Building2 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 
 export const Route = createFileRoute("/contact")({
-  head: () => ({
-    meta: [
-      { title: "Contact Us — SOLIDAS TILES AND MARBLE NIG. LIMITED" },
-      { name: "description", content: "Contact SOLIDAS TILES AND MARBLE NIG. LIMITED in Dei Dei, Abuja. Phone: 08035186355, 08151495663, 09040327777." },
-    ],
-  }),
+  head: () => {
+    const origin = getProductionOrigin();
+    return {
+      meta: [
+        { title: "Contact Us — SOLIDAS TILES AND MARBLE NIG. LIMITED" },
+        { name: "description", content: "Contact SOLIDAS TILES AND MARBLE NIG. LIMITED in Dei Dei, Abuja. Premium tiles, marble, granite & security doors. Phone: 08035186355, 08151495663, 09040327777." },
+        { property: "og:title", content: "Contact Us — SOLIDAS TILES AND MARBLE NIG. LIMITED" },
+        { property: "og:description", content: "Visit our Head Office or Branch Office in Dei Dei, Abuja. Suppliers of premium tiles, marble, granite, and security doors." },
+        { property: "og:type", content: "website" },
+        { property: "og:url", content: `${origin}/contact` },
+      ],
+      links: [
+        { rel: "canonical", href: `${origin}/contact` },
+      ],
+    };
+  },
   component: ContactPage,
 });
 
@@ -53,7 +64,7 @@ function ContactPage() {
                 href={s.map_url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="block rounded-xl border border-border bg-white p-5 shadow-xs hover:border-[#C0262D] transition group"
+                className="block rounded-xl border border-border bg-white p-5 shadow-xs space-y-3 hover:border-[#C0262D] transition group"
               >
                 <div className="flex items-start gap-3">
                   <MapPin className="h-6 w-6 text-[#C0262D] shrink-0 mt-0.5 group-hover:scale-110 transition-transform" />
@@ -82,7 +93,7 @@ function ContactPage() {
                 href={s.map_url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="block rounded-xl border border-border bg-white p-5 shadow-xs hover:border-[#1E82A6] transition group"
+                className="block rounded-xl border border-border bg-white p-5 shadow-xs space-y-3 hover:border-[#1E82A6] transition group"
               >
                 <div className="flex items-start gap-3">
                   <Building2 className="h-6 w-6 text-[#1E82A6] shrink-0 mt-0.5 group-hover:scale-110 transition-transform" />

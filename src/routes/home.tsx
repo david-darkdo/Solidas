@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { AppShell } from "@/components/AppShell";
 import { useAppSettings, waLink } from "@/lib/settings";
+import { getProductionOrigin } from "@/lib/origin";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import {
@@ -28,21 +29,32 @@ import {
 } from "lucide-react";
 
 export const Route = createFileRoute("/home")({
-  head: () => ({
-    meta: [
-      { title: "SOLIDAS TILES AND MARBLE NIG. LIMITED — Architectural Showroom" },
-      {
-        name: "description",
-        content:
-          "SOLIDAS TILES AND MARBLE NIG. LIMITED is your trusted supplier of premium tiles, marble, granite, foreign security doors, wooden doors, PVC ceiling and architectural building materials in Abuja.",
-      },
-      { property: "og:title", content: "SOLIDAS — Premium Building Materials Showroom" },
-      {
-        property: "og:description",
-        content: "Dealers & Suppliers of Tiles, Marble, Granite, Security Doors & Architectural Finishes.",
-      },
-    ],
-  }),
+  head: () => {
+    const origin = getProductionOrigin();
+    return {
+      meta: [
+        { title: "SOLIDAS TILES AND MARBLE NIG. LIMITED — Architectural Showroom" },
+        {
+          name: "description",
+          content:
+            "SOLIDAS TILES AND MARBLE NIG. LIMITED is your trusted supplier of premium tiles, marble, granite, foreign security doors, wooden doors, PVC ceiling and architectural building materials in Abuja.",
+        },
+        { property: "og:title", content: "SOLIDAS — Premium Building Materials Showroom" },
+        {
+          property: "og:description",
+          content: "Dealers & Suppliers of Tiles, Marble, Granite, Security Doors & Architectural Finishes.",
+        },
+        { property: "og:type", content: "website" },
+        { property: "og:url", content: `${origin}/home` },
+        { name: "twitter:card", content: "summary_large_image" },
+        { name: "twitter:title", content: "SOLIDAS — Premium Building Materials Showroom" },
+        { name: "twitter:description", content: "Dealers & Suppliers of Tiles, Marble, Granite, Security Doors & Architectural Finishes in Abuja." },
+      ],
+      links: [
+        { rel: "canonical", href: `${origin}/home` },
+      ],
+    };
+  },
   component: HomePage,
 });
 
@@ -355,9 +367,9 @@ function HomePage() {
                       className={`h-2 rounded-full transition-all duration-300 ${
                         currentShowcaseIndex === idx ? "w-6 bg-[#1E82A6]" : "w-2 bg-white/40 hover:bg-white/70"
                       }`}
-                      aria-label={`Go to video ${idx + 1}`}
+                      aria-label={`Go to video ${idx + 1}`}\
                     />
-                  ))}
+                  ))}\
                 </div>
 
                 {/* Arrow Controls */}
