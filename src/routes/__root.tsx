@@ -22,22 +22,24 @@ import appCss from "../styles.css?url";
 import { Toaster } from "@/components/ui/sonner";
 import { AuthProvider, useAuth } from "@/hooks/use-auth";
 import { supabase } from "@/integrations/supabase/client";
+import { fetchAppSettings } from "@/lib/settings";
+import { getProductionOrigin } from "@/lib/origin";
 
 function NotFoundComponent() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
-      <div className="max-w-md text-center">
-        <h1 className="text-7xl font-bold text-foreground">404</h1>
-        <h2 className="mt-4 text-xl font-semibold text-foreground">Page not found</h2>
-        <p className="mt-2 text-sm text-muted-foreground">
-          The page you're looking for doesn't exist or has been moved.
+      <div className="max-w-md text-center space-y-4">
+        <h1 className="text-7xl font-extrabold text-[#1E82A6] font-display">404</h1>
+        <h2 className="text-xl font-bold text-foreground">Material Page Not Found</h2>
+        <p className="text-sm text-muted-foreground">
+          The building material, collection, or catalog view you requested is unavailable or has been relocated.
         </p>
-        <div className="mt-6">
+        <div>
           <Link
             to="/"
-            className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+            className="inline-flex items-center justify-center rounded-md bg-[#1E82A6] px-5 py-2.5 text-sm font-bold text-white transition-colors hover:bg-[#166481]"
           >
-            Go home
+            Return to SOLIDAS Showroom
           </Link>
         </div>
       </div>
@@ -51,36 +53,34 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
-      <div className="max-w-md text-center">
-        <h1 className="text-xl font-semibold tracking-tight text-foreground">
-          This page didn't load
+      <div className="max-w-md text-center space-y-4">
+        <h1 className="text-xl font-bold tracking-tight text-foreground">
+          Showroom Connection Error
         </h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Something went wrong on our end. You can try refreshing or head back home.
+        <p className="text-sm text-muted-foreground">
+          We encountered an issue loading this section. Please refresh or return to the main showroom view.
         </p>
-        <div className="mt-6 flex flex-wrap justify-center gap-2">
+        <div className="flex flex-wrap justify-center gap-3">
           <button
             onClick={() => {
               router.invalidate();
               reset();
             }}
-            className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+            className="inline-flex items-center justify-center rounded-md bg-[#1E82A6] px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-[#166481]"
           >
-            Try again
+            Refresh View
           </button>
           <a
             href="/"
-            className="inline-flex items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent"
+            className="inline-flex items-center justify-center rounded-md border border-border bg-white px-4 py-2 text-sm font-bold text-foreground transition-colors hover:bg-surface-2"
           >
-            Go home
+            Go to Showroom Home
           </a>
         </div>
       </div>
     </div>
   );
 }
-
-import { fetchAppSettings } from "@/lib/settings";
 
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
   loader: async () => {
@@ -95,27 +95,29 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     const settings = loaderData?.settings;
     const googleVerify = settings?.google_site_verification;
     const bingVerify = settings?.bing_site_verification;
+    const origin = getProductionOrigin();
 
     const meta = [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
-      { name: "theme-color", content: "#2f5240" },
-      { title: "Enreach Concepts — Luxury Building Materials Showroom" },
+      { name: "theme-color", content: "#1E82A6" },
+      { title: "SOLIDAS — Premium Tiles, Marble, Security Doors & Building Materials" },
       {
         name: "description",
-        content: "Discover luxury tiles, security doors, plumbing, lighting and custom finishes. Curated premium building materials at Enreach Concepts Abuja.",
+        content: "SOLIDAS TILES AND MARBLE NIG. LIMITED: Premium tiles, marble, granite, foreign security doors, wooden doors, PVC ceiling, & general building materials in Abuja.",
       },
-      { property: "og:title", content: "Enreach Concepts — Luxury Building Materials Showroom" },
+      { property: "og:title", content: "SOLIDAS TILES AND MARBLE NIG. LIMITED — Architectural Digital Showroom" },
       {
         property: "og:description",
-        content: "A curated catalogue of premium tiles, doors and finishes — built for professional builders and custom residential developments.",
+        content: "Explore premium tiles, luxury marble, security doors and architectural finishes curated by SOLIDAS TILES AND MARBLE NIG. LIMITED.",
       },
       { property: "og:type", content: "website" },
+      { property: "og:url", content: origin },
       { name: "twitter:card", content: "summary_large_image" },
-      { name: "twitter:title", content: "Enreach Concepts — Luxury Building Materials Showroom" },
-      { name: "twitter:description", content: "A curated catalogue of premium tiles, doors and finishes — built for professional builders." },
-      { property: "og:image", content: "/logo.png" },
-      { name: "twitter:image", content: "/logo.png" },
+      { name: "twitter:title", content: "SOLIDAS TILES AND MARBLE NIG. LIMITED" },
+      { name: "twitter:description", content: "Dealers & Suppliers of General Building Materials: Tiles, Marble, Granite, Security Doors & Finishes." },
+      { property: "og:image", content: `${origin}/logo.png` },
+      { name: "twitter:image", content: `${origin}/logo.png` },
     ];
 
     if (googleVerify) {
@@ -128,10 +130,12 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     return {
       meta,
       links: [
+        { rel: "canonical", href: `${origin}/` },
         { rel: "stylesheet", href: appCss },
-        { rel: "manifest", href: "/manifest.webmanifest" },
-        { rel: "apple-touch-icon", href: "/icon-512.png" },
-        { rel: "icon", href: "/icon-512.png", type: "image/png" },
+        { rel: "manifest", href: "/manifest.webmanifest?v=3" },
+        { rel: "apple-touch-icon", href: "/apple-touch-icon.png?v=3" },
+        { rel: "icon", href: "/favicon.ico?v=3", sizes: "any" },
+        { rel: "icon", href: "/favicon.png?v=3", type: "image/png" },
       ],
     };
   },
@@ -142,28 +146,66 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 });
 
 function RootShell({ children }: { children: ReactNode }) {
-  const organizationSchema = {
+  const origin = getProductionOrigin();
+  const loaderData = Route.useLoaderData();
+  const settings = loaderData?.settings;
+
+  const sameAsLinks = [
+    settings?.facebook_url,
+    settings?.instagram_url,
+    settings?.tiktok_url,
+    settings?.youtube_url,
+  ].filter(Boolean) as string[];
+
+  const organizationSchema: Record<string, any> = {
     "@context": "https://schema.org",
     "@type": "Organization",
-    "name": "Enreach Concepts",
-    "url": "https://showroom.enreach.concepts",
-    "logo": "https://showroom.enreach.concepts/logo.png",
-    "description": "Luxury building materials showroom in Abuja specializing in premium tiles, armored security doors, sanitaryware, and architectural finishes.",
+    "name": "SOLIDAS TILES AND MARBLE NIG. LIMITED",
+    "alternateName": "SOLIDAS",
+    "url": origin,
+    "logo": `${origin}/logo.png`,
+    "description": "Dealers & Suppliers of General Building Materials Such As Tiles & Marble, Granite, Crack Tiles, Foreign Security Doors, Wooden Doors, PVC Ceiling & General Contracts.",
+    "telephone": "+2348035186355",
+    "email": settings?.company_email || "info@solidas.com.ng",
     "address": {
       "@type": "PostalAddress",
+      "streetAddress": "Plot 469, Solidas Plaza, Saburi District Opp Timber Shed Dei Dei Building Material Mkt",
       "addressLocality": "Abuja",
+      "addressRegion": "FCT",
       "addressCountry": "NG"
     }
+  };
+
+  if (sameAsLinks.length > 0) {
+    organizationSchema["sameAs"] = sameAsLinks;
+  }
+
+  const localBusinessSchema = {
+    "@context": "https://schema.org",
+    "@type": "HomeGoodsStore",
+    "name": "SOLIDAS TILES AND MARBLE NIG. LIMITED",
+    "image": `${origin}/logo.png`,
+    "url": origin,
+    "telephone": "+2348035186355",
+    "priceRange": "$$",
+    "address": {
+      "@type": "PostalAddress",
+      "streetAddress": "Plot 469, Solidas Plaza, Saburi District Opp Timber Shed Dei Dei Building Material Mkt",
+      "addressLocality": "Abuja",
+      "addressRegion": "FCT",
+      "addressCountry": "NG"
+    },
+    "hasMap": settings?.map_url || "https://maps.app.goo.gl/4Q9q1Kk3Tk7vEnPa9?g_st=ac"
   };
 
   const websiteSchema = {
     "@context": "https://schema.org",
     "@type": "WebSite",
-    "name": "Enreach Concepts Digital Showroom",
-    "url": "https://showroom.enreach.concepts",
+    "name": "SOLIDAS Digital Showroom",
+    "url": origin,
     "potentialAction": {
       "@type": "SearchAction",
-      "target": "https://showroom.enreach.concepts/search?q={search_term_string}",
+      "target": `${origin}/search?q={search_term_string}`,
       "query-input": "required name=search_term_string"
     }
   };
@@ -175,6 +217,10 @@ function RootShell({ children }: { children: ReactNode }) {
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationSchema) }}
+        />
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(localBusinessSchema) }}
         />
         <script
           type="application/ld+json"
@@ -226,7 +272,6 @@ function RootAppWrapper() {
   useEffect(() => {
     if (!user?.id) return;
 
-    // Track page views
     const trackView = async () => {
       const { data: profile } = await supabase
         .from("profiles")
@@ -243,7 +288,6 @@ function RootAppWrapper() {
     };
     void trackView();
 
-    // Register active PWA mock push device token for testing notifications
     const registerDevice = async () => {
       const { data: profile } = await supabase
         .from("profiles")
@@ -268,15 +312,17 @@ function RootAppWrapper() {
 
   const loaderData = Route.useLoaderData();
   const settings = loaderData?.settings;
+  const origin = getProductionOrigin();
   const orgSchema = {
     "@context": "https://schema.org",
     "@type": "Organization",
-    "name": (settings as any)?.company_name || "Enreach Concepts",
-    "url": typeof window !== "undefined" ? window.location.origin : "https://enreachconcepts.com",
-    "logo": (settings as any)?.company_logo || (typeof window !== "undefined" ? `${window.location.origin}/logo.png` : "https://enreachconcepts.com/logo.png"),
+    "name": "SOLIDAS TILES AND MARBLE NIG. LIMITED",
+    "alternateName": "SOLIDAS",
+    "url": origin,
+    "logo": (settings as any)?.company_logo || `${origin}/logo.png`,
     "contactPoint": {
       "@type": "ContactPoint",
-      "telephone": settings?.support_whatsapp || "",
+      "telephone": settings?.support_whatsapp || "08035186355",
       "contactType": "sales & customer support"
     }
   };
@@ -293,11 +339,11 @@ function RootAppWrapper() {
         const showGlobalLoader = (showLoader || initialLoading) && !isApiRoute;
         if (!showGlobalLoader) return null;
         return (
-          <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-background/30 backdrop-blur-[1px] transition-all duration-300 animate-fade-in">
+          <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-white/40 backdrop-blur-xs transition-all duration-300 animate-fade-in">
             <style>{`
               @keyframes breathing {
-                0%, 100% { transform: scale(0.95); opacity: 0.35; }
-                50% { transform: scale(1.05); opacity: 0.7; }
+                0%, 100% { transform: scale(0.95); opacity: 0.4; }
+                50% { transform: scale(1.05); opacity: 0.85; }
               }
               @keyframes fadeIn {
                 from { opacity: 0; }
@@ -310,14 +356,14 @@ function RootAppWrapper() {
                 animation: fadeIn 0.2s ease-out forwards;
               }
             `}</style>
-            <div className="flex flex-col items-center gap-4 animate-breathing">
+            <div className="flex flex-col items-center gap-3 animate-breathing">
               <img
                 src="/logo.png"
-                alt="Enreach Concepts Logo"
+                alt="SOLIDAS Logo"
                 className="h-16 w-auto object-contain"
               />
-              <p className="font-display text-[9px] tracking-widest text-muted-foreground/80 uppercase">
-                Loading
+              <p className="font-display text-[10px] font-bold tracking-widest text-[#1E82A6] uppercase">
+                SOLIDAS SHOWROOM
               </p>
             </div>
           </div>

@@ -4,7 +4,8 @@ import { useEffect, useRef } from "react";
 import { AppShell } from "@/components/AppShell";
 import { ProductCard, ProductCardSkeleton } from "@/components/ProductCard";
 import { fetchFeedProductsPaginated, fetchTaxonomy, type FeedFilters, type CursorParam } from "@/lib/catalog";
-import { Sparkles, ChevronDown, Loader2 } from "lucide-react";
+import { getProductionOrigin } from "@/lib/origin";
+import { ChevronDown, Loader2 } from "lucide-react";
 
 type FeedSearch = {
   type?: string;
@@ -41,19 +42,32 @@ export const Route = createFileRoute("/")({
     context.queryClient.ensureQueryData(taxonomyQuery);
     context.queryClient.ensureInfiniteQueryData(feedInfiniteQuery(deps));
   },
-  head: () => ({
-    meta: [
-      { title: "Discover — Enreach Building Materials Showroom" },
-      {
-        name: "description",
-        content: "Browse curated tiles, security doors, plumbing and custom architectural finishes.",
-      },
-    ],
-  }),
+  head: () => {
+    const origin = getProductionOrigin();
+    return {
+      meta: [
+        { title: "Discover — SOLIDAS TILES AND MARBLE NIG. LIMITED" },
+        {
+          name: "description",
+          content: "Explore Nigeria's leading architectural catalogue for luxury tiles, marble, granite, foreign security doors, and building finishes at Solidas Dei Dei, Abuja.",
+        },
+        { property: "og:title", content: "Discover — SOLIDAS TILES AND MARBLE NIG. LIMITED" },
+        { property: "og:description", content: "Explore Nigeria's leading architectural catalogue for luxury tiles, marble, granite, foreign security doors, and building finishes at Solidas Dei Dei, Abuja." },
+        { property: "og:type", content: "website" },
+        { property: "og:url", content: `${origin}/` },
+        { name: "twitter:card", content: "summary_large_image" },
+        { name: "twitter:title", content: "Discover — SOLIDAS TILES AND MARBLE NIG. LIMITED" },
+        { name: "twitter:description", content: "Dealers & Suppliers of General Building Materials: Tiles, Marble, Granite, Security Doors & Finishes in Abuja." },
+      ],
+      links: [
+        { rel: "canonical", href: `${origin}/` },
+      ],
+    };
+  },
   component: FeedPage,
   errorComponent: ({ error }) => {
     return (
-      <div className="p-6 text-sm text-destructive font-mono">
+      <div className="p-6 text-sm text-[#C0262D] font-mono">
         <div>Error: {error.message}</div>
       </div>
     );
@@ -93,7 +107,6 @@ function FeedPage() {
   const hasNextPage = feedQuery.hasNextPage;
   const isFetchingNextPage = feedQuery.isFetchingNextPage;
 
-  // IntersectionObserver for Automatic Infinite Scroll
   useEffect(() => {
     if (!hasNextPage || isFetchingNextPage) return;
     const observer = new IntersectionObserver(
@@ -117,7 +130,7 @@ function FeedPage() {
         {/* Type row */}
         <FilterRow>
           <Pill active={!search.type} onClick={() => setType(undefined)}>
-            All
+            All Materials
           </Pill>
           {tax.types.map((t) => (
             <Pill key={t.id} active={search.type === t.slug} onClick={() => setType(t.slug)}>
@@ -130,7 +143,7 @@ function FeedPage() {
         {activeType && (
           <FilterRow tone="muted">
             <Pill active={!search.category} onClick={() => setCategory(undefined)}>
-              All
+              All Categories
             </Pill>
             {categoriesForType.map((c) => (
               <Pill
@@ -148,7 +161,7 @@ function FeedPage() {
         {activeCategory && subcategoriesForCat.length > 0 && (
           <FilterRow tone="muted">
             <Pill active={!search.subcategory} onClick={() => setSub(undefined)}>
-              All Sizes
+              All Specs
             </Pill>
             {subcategoriesForCat.map((s) => (
               <Pill
@@ -164,21 +177,21 @@ function FeedPage() {
 
         <div className="mt-5 flex items-end justify-between border-b border-border pb-3">
           <div>
-            <h1 className="font-display text-xs uppercase tracking-[0.18em] text-accent">
+            <h1 className="font-display text-xs uppercase tracking-[0.2em] font-bold text-[#1E82A6]">
               {activeSub
                 ? `${activeCategory?.name} · ${activeSub.name}`
                 : activeCategory
                   ? activeCategory.name
                   : activeType
                     ? activeType.name
-                    : "Curated Showroom Feed"}
+                    : "SOLIDAS Digital Showroom Feed"}
             </h1>
-            <p className="mt-1 font-display text-2xl font-semibold tracking-tight text-foreground">
-              Discover the catalogue
+            <p className="mt-1 font-display text-2xl font-extrabold tracking-tight text-foreground sm:text-3xl">
+              Architectural Materials Catalog
             </p>
           </div>
           {totalCount > 0 && (
-            <span className="text-xs font-mono text-muted-foreground">
+            <span className="text-xs font-mono text-muted-foreground hidden sm:inline">
               Showing {allProducts.length} of {totalCount} products
             </span>
           )}
@@ -195,14 +208,14 @@ function FeedPage() {
 
         {/* Empty state */}
         {!feedQuery.isLoading && allProducts.length === 0 && (
-          <div className="mt-10 rounded-xl border border-dashed border-border p-10 text-center bg-card/40">
+          <div className="mt-10 rounded-xl border border-dashed border-border p-10 text-center bg-white">
             <p className="text-sm text-muted-foreground">
-              No products match these filters yet.
+              No products match these material filters yet.
             </p>
             <Link
               to="/"
               search={{}}
-              className="mt-3 inline-block text-xs font-semibold text-primary hover:underline"
+              className="mt-3 inline-block text-xs font-bold text-[#1E82A6] hover:underline"
             >
               Reset filters
             </Link>
@@ -215,12 +228,12 @@ function FeedPage() {
             <button
               onClick={() => void feedQuery.fetchNextPage()}
               disabled={isFetchingNextPage}
-              className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-6 py-2.5 text-xs font-semibold uppercase tracking-wider text-foreground hover:border-primary hover:text-primary transition shadow-xs disabled:opacity-50"
+              className="inline-flex items-center gap-2 rounded-full border border-border bg-white px-6 py-2.5 text-xs font-bold uppercase tracking-wider text-foreground hover:border-[#1E82A6] hover:text-[#1E82A6] transition shadow-xs disabled:opacity-50"
             >
               {isFetchingNextPage ? (
                 <>
-                  <Loader2 className="h-4 w-4 animate-spin text-primary" />
-                  Loading more products…
+                  <Loader2 className="h-4 w-4 animate-spin text-[#1E82A6]" />
+                  Loading more materials…
                 </>
               ) : (
                 <>
@@ -267,10 +280,10 @@ function Pill({
     <button
       type="button"
       onClick={onClick}
-      className={`shrink-0 rounded-full border px-3.5 py-1.5 text-xs font-medium uppercase tracking-wider transition ${
+      className={`shrink-0 rounded-full border px-3.5 py-1.5 text-xs font-bold uppercase tracking-wider transition ${
         active
-          ? "border-primary bg-primary text-primary-foreground"
-          : "border-border bg-card text-muted-foreground hover:border-primary hover:text-primary"
+          ? "border-[#1E82A6] bg-[#1E82A6] text-white shadow-2xs"
+          : "border-border bg-white text-muted-foreground hover:border-[#1E82A6] hover:text-[#1E82A6]"
       }`}
     >
       {children}
