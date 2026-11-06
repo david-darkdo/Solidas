@@ -59,9 +59,6 @@ export const Route = createFileRoute("/")({
         { name: "twitter:title", content: "Discover — SOLIDAS TILES AND MARBLE NIG. LIMITED" },
         { name: "twitter:description", content: "Dealers & Suppliers of General Building Materials: Tiles, Marble, Granite, Security Doors & Finishes in Abuja." },
       ],
-      links: [
-        { rel: "canonical", href: `${origin}/` },
-      ],
     };
   },
   component: FeedPage,
