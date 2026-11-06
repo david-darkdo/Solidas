@@ -49,8 +49,7 @@ export const Route = createFileRoute("/product/$slug")({
     context.queryClient.ensureQueryData(relatedQuery(product.family_id, product.id));
 
     // Fetch taxonomy parents
-    const [typeRes, categoryRes, subcategoryRes, familyRes] = await Promise.all([
-      product.type_id ? supabase.from("product_types").select("name, slug").eq("id", product.type_id).maybeSingle() : Promise.resolve({ data: null }),
+    const [typeRes, categoryRes, subcategoryRes, familyRes] = await Promise.all([\n      product.type_id ? supabase.from("product_types").select("name, slug").eq("id", product.type_id).maybeSingle() : Promise.resolve({ data: null }),
       product.category_id ? supabase.from("categories").select("name, slug").eq("id", product.category_id).maybeSingle() : Promise.resolve({ data: null }),
       product.subcategory_id ? supabase.from("subcategories").select("name, slug").eq("id", product.subcategory_id).maybeSingle() : Promise.resolve({ data: null }),
       product.family_id ? supabase.from("family_groups").select("name, slug").eq("id", product.family_id).maybeSingle() : Promise.resolve({ data: null }),
@@ -70,7 +69,7 @@ export const Route = createFileRoute("/product/$slug")({
   head: ({ loaderData }: any): any => {
     const product = loaderData?.product;
     const origin = loaderData?.origin || getProductionOrigin();
-    const title = product?.seo_title || `${product?.name || "Product"} — Enreach Concepts`;
+    const title = product?.seo_title || `${product?.name || "Product"} | SOLIDAS`;
     const desc = product?.seo_description || product?.short_description || "Premium building material details.";
     const imageUrl = product?.generated_studio_image || product?.image_url || "";
     const canonical = getCanonicalProductUrl(product, origin);
@@ -251,7 +250,7 @@ function ProductPage() {
     "mpn": product.code || product.id,
     "brand": {
       "@type": "Brand",
-      "name": product.brand || "Enreach Concepts"
+      "name": product.brand || "SOLIDAS"
     },
     "material": product.material || undefined,
     "color": product.color || undefined,
@@ -266,7 +265,7 @@ function ProductPage() {
       "itemCondition": "https://schema.org/NewCondition",
       "seller": {
         "@type": "Organization",
-        "name": "Enreach Concepts",
+        "name": "SOLIDAS TILES AND MARBLE NIG. LIMITED",
         "url": origin
       }
     }
@@ -365,8 +364,7 @@ function ProductPage() {
         {/* Thumbnail Selector Bar */}
         {galleryImages.length > 1 && (
           <div className="flex gap-2.5 mt-3 overflow-x-auto pb-1 scrollbar-none">
-            {galleryImages.map((imgUrl, i) => (
-              <button
+            {galleryImages.map((imgUrl, i) => (\n              <button
                 key={i}
                 onClick={() => setActiveImgIndex(i)}
                 className={`h-14 w-14 rounded-lg border overflow-hidden shrink-0 transition bg-card ${
@@ -383,7 +381,7 @@ function ProductPage() {
         <div className="mt-6 space-y-4">
           <div>
             <p className="text-xs font-mono uppercase tracking-[0.18em] text-primary font-bold">
-              {product.brand || "Enreach Concepts"} · Code {product.code}
+              {product.brand || "SOLIDAS"} · Code {product.code}
             </p>
             <h1 className="mt-1 font-display text-2xl sm:text-3xl font-extrabold text-foreground tracking-tight uppercase">
               {product.name}

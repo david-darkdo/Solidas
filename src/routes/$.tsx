@@ -8,6 +8,7 @@ import { publicImageUrl } from "@/components/ImageUploader";
 import { ArrowRight, Layers } from "lucide-react";
 import { slugify } from "@/lib/slug";
 import { getCanonicalProductUrl } from "@/lib/product-url";
+import { getProductionOrigin } from "@/lib/origin";
 
 type ResolvedHierarchy = {
   type: any;
@@ -218,30 +219,31 @@ const hierarchyQuery = (splat: string, origin: string) =>
 
 export const Route = createFileRoute("/$")({
   loader: async ({ context, params }) => {
-    const origin = typeof window !== 'undefined' ? window.location.origin : 'https://showroom.enreach.concepts';
+    const origin = typeof window !== "undefined" ? window.location.origin : getProductionOrigin();
     const data = await context.queryClient.ensureQueryData(hierarchyQuery((params as any)._splat ?? "", origin));
     return data;
   },
   head: ({ loaderData }: any): any => {
     if (!loaderData) return {};
-    const { type, category, subcategory, family, origin } = loaderData;
+    const { type, category, subcategory, family } = loaderData;
+    const origin = loaderData.origin || getProductionOrigin();
 
     // Resolve dynamic fallback meta details
     let title = "";
     let description = "";
 
     if (family) {
-      title = `${family.name} Collection — Premium ${category.name} | Enreach Concepts`;
-      description = `Explore the beautiful ${family.name} collection of premium ${category.name} ${type.name} at Enreach Concepts. View available colors, finishes, and specs.`;
+      title = `${family.name} Collection — Premium ${category.name} | SOLIDAS`;
+      description = `Explore the beautiful ${family.name} collection of premium ${category.name} ${type.name} at Solidas Tiles and Marble. View available colors, finishes, and specs.`;
     } else if (subcategory) {
-      title = `Luxury ${subcategory.name} ${category.name} ${type.name} | Enreach Concepts`;
-      description = `Browse our catalog of premium ${subcategory.name} sized ${category.name} ${type.name} building materials curated by Enreach Concepts.`;
+      title = `Luxury ${subcategory.name} ${category.name} ${type.name} | SOLIDAS`;
+      description = `Browse our catalog of premium ${subcategory.name} sized ${category.name} ${type.name} building materials curated by Solidas Tiles and Marble.`;
     } else if (category) {
-      title = `Premium ${category.name} ${type.name} | Enreach Concepts`;
-      description = `Discover high-quality, luxury ${category.name} ${type.name} building products at Enreach Concepts. Explore our curated collections.`;
+      title = `Premium ${category.name} ${type.name} | SOLIDAS`;
+      description = `Discover high-quality, luxury ${category.name} ${type.name} building products at Solidas Tiles and Marble. Explore our curated collections.`;
     } else {
-      title = `${type.name} Catalog | Enreach Concepts`;
-      description = `Curated luxury ${type.name} collections and building materials. Discover premium tiles, doors, plumbing, and surfaces at Enreach Concepts.`;
+      title = `${type.name} Catalog | SOLIDAS`;
+      description = `Curated luxury ${type.name} collections and building materials. Discover premium tiles, doors, plumbing, and surfaces at Solidas Tiles and Marble.`;
     }
 
     const firstImage = loaderData.products[0]?.generated_studio_image || loaderData.products[0]?.image_url || "";
@@ -276,7 +278,8 @@ export const Route = createFileRoute("/$")({
 function HierarchyLandingPage() {
   const params = Route.useParams();
   const { data } = useSuspenseQuery(hierarchyQuery((params as any)._splat, ""));
-  const { type, category, subcategory, family, products, childCategories, childSubcategories, childFamilies, origin } = data;
+  const { type, category, subcategory, family, products, childCategories, childSubcategories, childFamilies } = data;
+  const origin = data.origin || getProductionOrigin();
 
   // Build visual breadcrumbs array
   const breadcrumbs = [
@@ -347,7 +350,7 @@ function HierarchyLandingPage() {
           </p>
           <p className="mt-3 max-w-2xl text-sm leading-relaxed text-muted-foreground">
             {family?.custom_ai_prompt_override ||
-              `Browse our catalog of premium ${type.name.toLowerCase()} materials. Enreach Concepts curates state of the art finishes for custom builder specifications.`}
+              `Browse our catalog of premium ${type.name.toLowerCase()} materials. Solidas Tiles and Marble curates state of the art finishes for custom builder specifications.`}
           </p>
         </div>
 
