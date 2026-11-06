@@ -130,7 +130,6 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     return {
       meta,
       links: [
-        { rel: "canonical", href: `${origin}/` },
         { rel: "stylesheet", href: appCss },
         { rel: "manifest", href: "/manifest.webmanifest?v=3" },
         { rel: "apple-touch-icon", href: "/apple-touch-icon.png?v=3" },
@@ -149,6 +148,9 @@ function RootShell({ children }: { children: ReactNode }) {
   const origin = getProductionOrigin();
   const loaderData = Route.useLoaderData();
   const settings = loaderData?.settings;
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const canonicalPath = pathname === "/" ? "/" : pathname.replace(/\/+$/, "");
+  const canonicalUrl = `${origin}${canonicalPath}`;
 
   const sameAsLinks = [
     settings?.facebook_url,
@@ -166,7 +168,7 @@ function RootShell({ children }: { children: ReactNode }) {
     "logo": `${origin}/logo.png`,
     "description": "Dealers & Suppliers of General Building Materials Such As Tiles & Marble, Granite, Crack Tiles, Foreign Security Doors, Wooden Doors, PVC Ceiling & General Contracts.",
     "telephone": "+2348035186355",
-    "email": settings?.company_email || "info@solidas.com.ng",
+    "email": settings?.company_email || "solidastilesnmarble@gmail.com",
     "address": {
       "@type": "PostalAddress",
       "streetAddress": "Plot 469, Solidas Plaza, Saburi District Opp Timber Shed Dei Dei Building Material Mkt",
@@ -195,7 +197,7 @@ function RootShell({ children }: { children: ReactNode }) {
       "addressRegion": "FCT",
       "addressCountry": "NG"
     },
-    "hasMap": settings?.map_url || "https://maps.app.goo.gl/4Q9q1Kk3Tk7vEnPa9?g_st=ac"
+    "hasMap": settings?.map_url || "https://maps.app.goo.gl/noM38nVdN74A2Gpt8?g_st=ac"
   };
 
   const websiteSchema = {
@@ -214,6 +216,7 @@ function RootShell({ children }: { children: ReactNode }) {
     <html lang="en">
       <head>
         <HeadContent />
+        <link rel="canonical" href={canonicalUrl} />
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationSchema) }}
@@ -342,20 +345,7 @@ function RootAppWrapper() {
           <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-white/40 backdrop-blur-xs transition-all duration-300 animate-fade-in">
             <style>{`
               @keyframes breathing {
-                0%, 100% { transform: scale(0.95); opacity: 0.4; }
-                50% { transform: scale(1.05); opacity: 0.85; }
-              }
-              @keyframes fadeIn {
-                from { opacity: 0; }
-                to { opacity: 1; }
-              }
-              .animate-breathing {
-                animation: breathing 2s ease-in-out infinite;
-              }
-              .animate-fade-in {
-                animation: fadeIn 0.2s ease-out forwards;
-              }
-            `}</style>
+                0%, 100% { transform: scale(0.95); opacity: 0.4; }\n                50% { transform: scale(1.05); opacity: 0.85; }\n              }\n              @keyframes fadeIn {\n                from { opacity: 0; }\n                to { opacity: 1; }\n              }\n              .animate-breathing {\n                animation: breathing 2s ease-in-out infinite;\n              }\n              .animate-fade-in {\n                animation: fadeIn 0.2s ease-out forwards;\n              }\n            `}</style>
             <div className="flex flex-col items-center gap-3 animate-breathing">
               <img
                 src="/logo.png"
