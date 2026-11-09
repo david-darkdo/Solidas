@@ -59,6 +59,9 @@ export const Route = createFileRoute("/")({
         { name: "twitter:title", content: "Discover — SOLIDAS TILES AND MARBLE NIG. LIMITED" },
         { name: "twitter:description", content: "Dealers & Suppliers of General Building Materials: Tiles, Marble, Granite, Security Doors & Finishes in Abuja." },
       ],
+      links: [
+        { rel: "canonical", href: `${origin}/` },
+      ],
     };
   },
   component: FeedPage,
@@ -79,15 +82,15 @@ function FeedPage() {
 
   const loadMoreRef = useRef<HTMLDivElement>(null);
 
-  const activeType = tax.types.find((t) => t.slug === search.type);
+  const activeType = tax.types.find((t: any) => t.slug === search.type);
   const categoriesForType = activeType
     ? tax.categories.filter((c: any) => c.type_id === activeType.id)
     : [];
-  const activeCategory = categoriesForType.find((c) => c.slug === search.category);
+  const activeCategory = categoriesForType.find((c: any) => c.slug === search.category);
   const subcategoriesForCat = activeCategory
     ? tax.subcategories.filter((s: any) => s.category_id === activeCategory.id)
     : [];
-  const activeSub = subcategoriesForCat.find((s) => s.slug === search.subcategory);
+  const activeSub = subcategoriesForCat.find((s: any) => s.slug === search.subcategory);
 
   const setType = (slug?: string) =>
     navigate({ to: "/", search: { type: slug, category: undefined, subcategory: undefined } });
@@ -129,7 +132,7 @@ function FeedPage() {
           <Pill active={!search.type} onClick={() => setType(undefined)}>
             All Materials
           </Pill>
-          {tax.types.map((t) => (
+          {tax.types.map((t: any) => (
             <Pill key={t.id} active={search.type === t.slug} onClick={() => setType(t.slug)}>
               {t.name}
             </Pill>
@@ -142,7 +145,7 @@ function FeedPage() {
             <Pill active={!search.category} onClick={() => setCategory(undefined)}>
               All Categories
             </Pill>
-            {categoriesForType.map((c) => (
+            {categoriesForType.map((c: any) => (
               <Pill
                 key={c.id}
                 active={search.category === c.slug}
@@ -160,7 +163,7 @@ function FeedPage() {
             <Pill active={!search.subcategory} onClick={() => setSub(undefined)}>
               All Specs
             </Pill>
-            {subcategoriesForCat.map((s) => (
+            {subcategoriesForCat.map((s: any) => (
               <Pill
                 key={s.id}
                 active={search.subcategory === s.slug}
