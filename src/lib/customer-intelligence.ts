@@ -193,7 +193,7 @@ export async function getRecommendations(userId: string | null, limit: number = 
         .limit(2);
       
       if (interests && interests.length > 0) {
-        targetCategories = interests.map(i => i.category);
+        targetCategories = interests.map((i: any) => i.category);
       }
     }
 
