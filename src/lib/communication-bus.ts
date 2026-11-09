@@ -238,7 +238,7 @@ export class CommunicationEventBus {
       for (const channel of channels) {
         const address = channel === 'email' 
           ? profile.email 
-          : (await supabase.from('communication_devices').select('token').eq('user_id', userId).eq('is_active', true).limit(1).then(r => r.data?.[0]?.token || ''));
+          : (await supabase.from('communication_devices').select('token').eq('user_id', userId).eq('is_active', true).limit(1).then((r: any) => r.data?.[0]?.token || ''));
 
         if (!address) continue;
 
