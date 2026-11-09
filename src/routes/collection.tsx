@@ -121,7 +121,7 @@ function CollectionPage() {
         const savedUserReqs = getUserItemRequirements(user.id);
         const reqMap: Record<string, ItemRequirements> = {};
         batch.items.forEach((ci: any) => {
-          const matchingProd = batch.products.find((p) => p.id === ci.product_id);
+          const matchingProd = batch.products.find((p: any) => p.id === ci.product_id);
           const autoUnit = detectProductUnit(matchingProd);
           const savedReq = savedUserReqs[ci.product_id] || {};
           reqMap[ci.product_id] = {
@@ -145,7 +145,7 @@ function CollectionPage() {
 
         const reqMap: Record<string, ItemRequirements> = {};
         guest.forEach((gi) => {
-          const matchingProd = prods.find((p) => p.id === gi.product_id);
+          const matchingProd = prods.find((p: any) => p.id === gi.product_id);
           const autoUnit = detectProductUnit(matchingProd);
           reqMap[gi.product_id] = {
             quantity: gi.quantity ?? 1,
