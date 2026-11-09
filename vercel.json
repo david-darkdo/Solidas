@@ -1,5 +1,6 @@
 {
   "framework": "vite",
+  "installCommand": "DANGEROUSLY_DEPLOY_VULNERABLE_TANSTACK_START_XSS=1 npm install --no-package-lock",
   "buildCommand": "npm run build",
   "outputDirectory": ".vercel/output",
   "cleanUrls": true,
