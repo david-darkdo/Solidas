@@ -99,7 +99,7 @@ export function useFavorites() {
         const { data, error } = await query;
 
         if (!error && data) {
-          const ids = Array.from(new Set(data.map((d: any) => d.product_id).filter(Boolean)));
+          const ids: string[] = Array.from(new Set<string>(data.map((d: any) => d.product_id).filter(Boolean) as string[]));
           setFavoriteIds(ids);
           setUserFavoritesCache(user.id, ids);
         }
