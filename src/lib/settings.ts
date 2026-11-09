@@ -11,6 +11,7 @@ export type AppSettings = {
   facebook_url: string | null;
   instagram_url: string | null;
   tiktok_url: string | null;
+  youtube_url?: string | null;
   google_site_verification: string | null;
   bing_site_verification: string | null;
 };
@@ -25,6 +26,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   facebook_url: null,
   instagram_url: null,
   tiktok_url: null,
+  youtube_url: null,
   google_site_verification: null,
   bing_site_verification: null,
 };
