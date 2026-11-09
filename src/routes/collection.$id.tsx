@@ -3,8 +3,9 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { fetchProductsByIds, detectProductUnit } from "@/lib/collection";
 import { useAppSettings, waLink } from "@/lib/settings";
-import { MessageCircle, Lock } from "lucide-react";
+import { MessageCircle, Lock, ArrowLeft } from "lucide-react";
 import { publicImageUrl } from "@/components/ImageUploader";
+import { getProductionOrigin } from "@/lib/origin";
 
 export const Route = createFileRoute("/collection/$id")({
   loader: async ({ params }) => {
@@ -31,24 +32,20 @@ export const Route = createFileRoute("/collection/$id")({
     }
     return { imageUrl };
   },
-  head: ({ loaderData, params }: any) => {
-    const title = "Shared Project Collection | SOLIDAS";
-    const desc = "Check out this curated building materials project quotation request on Solidas Tiles and Marble.";
-    const img = loaderData?.imageUrl || "https://solidas.com.ng/icon-512.png";
-    const canonical = `https://solidas.com.ng/collection/${params.id}`;
+  head: ({ loaderData }) => {
+    const origin = getProductionOrigin();
+    const title = "Shared Project Collection — SOLIDAS TILES AND MARBLE NIG. LIMITED";
+    const desc = "Check out this curated building materials project quotation request on SOLIDAS TILES AND MARBLE NIG. LIMITED.";
+    const img = (loaderData as any)?.imageUrl || `${origin}/logo.png`;
     return {
-      links: [
-        { rel: "canonical", href: canonical }
-      ],
       meta: [
         { title: title },
         { name: "description", content: desc },
-        { name: "robots", content: "noindex, nofollow" },
+        { name: "robots", content: "noindex, follow" },
         { property: "og:type", content: "website" },
         { property: "og:title", content: title },
         { property: "og:description", content: desc },
         { property: "og:image", content: img },
-        { property: "og:url", content: canonical },
         { name: "twitter:card", content: "summary_large_image" },
         { name: "twitter:title", content: title },
         { name: "twitter:description", content: desc },
@@ -79,14 +76,14 @@ function SharedCollection() {
       const fetchedItems = rawItems ?? [];
       setItems(fetchedItems);
 
-      const fetchedProds = await fetchProductsByIds(fetchedItems.map((i) => i.product_id));
+      const fetchedProds = await fetchProductsByIds(fetchedItems.map((i: any) => i.product_id));
       setProducts(fetchedProds);
     };
     load();
   }, [id]);
 
   const itemsWithDetails = products.map((p) => {
-    const itemData = items.find((i) => i.product_id === p.id) || {};
+    const itemData = items.find((i: any) => i.product_id === p.id) || {};
     const unit = itemData.unit || detectProductUnit(p);
     const qty = itemData.quantity || 1;
     return {
@@ -100,8 +97,10 @@ function SharedCollection() {
     };
   });
 
+  const targetWa = settings?.sales_whatsapp || "2348035186355";
   const message = [
-    `Hi! I'd like to inquire about this Project Collection: ${collection?.name || "Collection"} ${collection?.version > 1 ? `(v${collection.version})` : ""}`,
+    `Hello SOLIDAS TILES AND MARBLE NIG. LIMITED,`,
+    `I'd like to inquire about this Project Collection: ${collection?.name || "Collection"} ${collection?.version > 1 ? `(v${collection.version})` : ""}`,
     `Shared Link: ${typeof window !== "undefined" ? window.location.href : ""}`,
     "",
     "Selected Products:",
@@ -109,71 +108,80 @@ function SharedCollection() {
   ].join("\n");
 
   return (
-    <div className="container-app py-6">
+    <div className="container-app py-6 space-y-6">
+      {/* TOP NAVIGATION ACTION BAR */}
+      <div className="flex items-center justify-between border-b border-border pb-3">
+        <Link
+          to="/"
+          className="inline-flex items-center gap-2 text-xs font-bold text-[#1E82A6] hover:text-[#166480] bg-white border border-border px-3.5 py-1.5 rounded-lg shadow-2xs hover:border-[#1E82A6] transition"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          <span>← Back to Showroom Home</span>
+        </Link>
+      </div>
+
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border pb-4">
         <div>
           <div className="flex flex-wrap items-center gap-2">
-            <h1 className="font-display text-2xl font-semibold">{collection?.name || "Shared Project Collection"}</h1>
+            <h1 className="font-display text-2xl font-bold text-foreground">{collection?.name || "Shared Project Collection"}</h1>
             {collection?.reference_number && (
-              <span className="rounded-md bg-card text-foreground text-xs font-mono font-bold px-2.5 py-1 border border-border">
+              <span className="rounded-md bg-white text-[#1E82A6] text-xs font-mono font-bold px-2.5 py-1 border border-border">
                 {collection.reference_number}
               </span>
             )}
             {collection?.version && collection.version > 1 && (
-              <span className="rounded-full bg-primary/10 text-primary text-xs font-semibold px-2.5 py-0.5 border border-primary/20">
+              <span className="rounded-full bg-[#1E82A6]/10 text-[#1E82A6] text-xs font-bold px-2.5 py-0.5 border border-[#1E82A6]/20">
                 v{collection.version}
               </span>
             )}
             {collection?.is_locked && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 text-amber-600 text-xs font-medium px-2.5 py-0.5 border border-amber-500/20">
+              <span className="inline-flex items-center gap-1 rounded-full bg-[#1E82A6]/10 text-[#1E82A6] text-xs font-bold px-2.5 py-0.5 border border-[#1E82A6]/20">
                 <Lock className="h-3 w-3" /> Submitted Request
               </span>
             )}
           </div>
           <p className="text-sm text-muted-foreground mt-1">
-            {products.length} product{products.length === 1 ? "" : "s"} included in this quotation request
+            {products.length} building material{products.length === 1 ? "" : "s"} included in this quotation request
           </p>
         </div>
 
-        {settings?.sales_whatsapp && (
-          <a
-            href={waLink(settings.sales_whatsapp, message)}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 transition shrink-0"
-          >
-            <MessageCircle className="h-4 w-4" /> Inquire on WhatsApp
-          </a>
-        )}
+        <a
+          href={waLink(targetWa, message)}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-2 rounded-lg bg-[#C0262D] px-5 py-2.5 text-sm font-bold text-white hover:bg-[#9A1B21] transition shrink-0 shadow-sm"
+        >
+          <MessageCircle className="h-4 w-4" /> Inquire on WhatsApp
+        </a>
       </div>
 
-      <ul className="mt-6 space-y-3">
+      <ul className="space-y-3">
         {itemsWithDetails.map((p) => (
-          <li key={p.id} className="rounded-xl border border-border bg-card overflow-hidden p-4 shadow-sm">
+          <li key={p.id} className="rounded-xl border border-border bg-white overflow-hidden p-4 shadow-xs">
             <div className="flex items-start sm:items-center gap-3">
-              <Link to="/product/$slug" params={{ slug: p.slug }} className="block h-16 w-16 shrink-0 overflow-hidden rounded-lg bg-muted border border-border/40">
+              <Link to="/product/$slug" params={{ slug: p.slug }} className="block h-16 w-16 shrink-0 overflow-hidden rounded-lg bg-surface-2 border border-border">
                 <img src={publicImageUrl(p.generated_studio_image) || publicImageUrl(p.image_url) || ""} alt={p.name} className="h-full w-full object-cover" loading="lazy" />
               </Link>
               <div className="min-w-0 flex-1">
-                <Link to="/product/$slug" params={{ slug: p.slug }} className="block truncate font-semibold text-base hover:text-primary">
+                <Link to="/product/$slug" params={{ slug: p.slug }} className="block truncate font-bold text-base hover:text-[#1E82A6]">
                   {p.name}
                 </Link>
-                <p className="text-xs text-muted-foreground">Code · {p.code}</p>
+                <p className="text-xs text-muted-foreground font-mono">Code · {p.code}</p>
                 {p.location && (
-                  <p className="text-xs text-primary font-medium mt-0.5">Location: {p.location}</p>
+                  <p className="text-xs text-[#1E82A6] font-bold mt-0.5">Location: {p.location}</p>
                 )}
               </div>
 
               <div className="text-right">
-                <div className="text-sm font-bold">₦{Number(p.price).toLocaleString()}</div>
-                <span className="inline-block mt-1 rounded-full bg-primary/10 text-primary text-xs font-semibold px-2.5 py-0.5">
+                <div className="text-sm font-bold text-foreground">₦{Number(p.price).toLocaleString()}</div>
+                <span className="inline-block mt-1 rounded-full bg-[#1E82A6]/10 text-[#1E82A6] text-xs font-bold px-2.5 py-0.5">
                   {p.itemQty} {p.itemUnit}
                 </span>
               </div>
             </div>
 
             {(p.delivery || p.installation || p.notes) && (
-              <div className="mt-3 pt-3 border-t border-border/60 text-xs grid grid-cols-1 sm:grid-cols-3 gap-2 text-muted-foreground">
+              <div className="mt-3 pt-3 border-t border-border text-xs grid grid-cols-1 sm:grid-cols-3 gap-2 text-muted-foreground">
                 {p.delivery && <div><strong className="text-foreground">Delivery:</strong> {p.delivery}</div>}
                 {p.installation && <div><strong className="text-foreground">Installation:</strong> {p.installation}</div>}
                 {p.notes && <div className="sm:col-span-3"><strong className="text-foreground">Notes:</strong> {p.notes}</div>}
