@@ -154,7 +154,7 @@ function TopBar() {
       .limit(10);
     if (data) {
       setNotifications(data);
-      const pending = data.filter(n => n.status === "PENDING").length;
+      const pending = data.filter((n: any) => n.status === "PENDING").length;
       setUnreadCount(pending);
     }
   };
@@ -360,7 +360,7 @@ function TopBar() {
                 <Link
                   to="/my-collections"
                   onClick={() => setMenuOpen(false)}
-                  className="flex items-center gap-2 px-4 py-2 text-sm text-foreground hover:bg-[#1E82A6]/10 hover:text-[#1E82A6]"
+                  className="flex items-center gap-2 px-4 py-2 text-sm text-foreground hover:bg-[#1E82A6]/10 hover:text-[#1E82A6] border-b border-border/50 pb-2.5"
                 >
                   <Bookmark className="h-4 w-4 text-[#C0262D]" />
                   <span>Collection History</span>
