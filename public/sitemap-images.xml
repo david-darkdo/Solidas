@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+        xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">
+  <url>
+    <loc>https://solidas.com.ng/product/virony-floor-tiles-l5fh</loc>
+    <image:image>
+      <image:loc>https://parverhzjdhrzdcqajyw.supabase.co/storage/v1/object/public/product-images/generated/c9f4023d-28cc-4731-9079-6e2e1e8beeaa/installed-v3-1783434462788.png</image:loc>
+      <image:title>Virony floor tiles</image:title>
+    </image:image>
+    <image:image>
+      <image:loc>https://parverhzjdhrzdcqajyw.supabase.co/storage/v1/object/public/product-images/generated/c9f4023d-28cc-4731-9079-6e2e1e8beeaa/studio-v3-1783434462788.png</image:loc>
+      <image:title>Virony floor tiles</image:title>
+    </image:image>
+    <image:image>
+      <image:loc>https://parverhzjdhrzdcqajyw.supabase.co/storage/v1/object/public/product-images/unassigned/1e70a934-5533-4e09-a9bb-1482c0a0fc20.jpg</image:loc>
+      <image:title>Virony floor tiles</image:title>
+    </image:image>
+  </url>
+  <url>
+    <loc>https://solidas.com.ng/product/matt-floor-tiles-rhn9</loc>
+    <image:image>
+      <image:loc>https://parverhzjdhrzdcqajyw.supabase.co/storage/v1/object/public/product-images/unassigned/a0179836-e85a-4912-9683-3f3b2ef532c7.jpg</image:loc>
+      <image:title>Matt floor tiles</image:title>
+    </image:image>
+  </url>
+  <url>
+    <loc>https://solidas.com.ng/product/virony-floor-tiles-ygzd</loc>
+    <image:image>
+      <image:loc>https://parverhzjdhrzdcqajyw.supabase.co/storage/v1/object/public/product-images/6fc42d63-2ec6-4b55-933b-a0bf59296300/03110d73-776a-4baa-a7aa-19ab75d94ade.jpg</image:loc>
+      <image:title>Virony floor tiles</image:title>
+    </image:image>
+    <image:image>
+      <image:loc>https://parverhzjdhrzdcqajyw.supabase.co/storage/v1/object/public/product-images/unassigned/94a3a639-3d02-428c-a2c1-c6e3c9c11c3e.jpg</image:loc>
+      <image:title>Virony floor tiles</image:title>
+    </image:image>
+  </url>
+</urlset>
