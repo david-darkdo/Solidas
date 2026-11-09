@@ -16,7 +16,7 @@ async function callLLM(provider: any, prompt: string, system: string): Promise<s
 
 async function tryJSON<T = any>(provider: any, prompt: string, system: string): Promise<T | null> {
   const raw = await callLLM(provider, prompt + "\n\nReturn ONLY compact JSON.", system);
-  const m = raw.match(/\{[sS]*\}/);
+  const m = raw.match(/\{[\s\S]*\}/);
   if (!m) return null;
   try { return JSON.parse(m[0]) as T; } catch { return null; }
 }
@@ -449,7 +449,7 @@ export const getDiscoveryHealthDetails = createServerFn({ method: "GET" })
       .select("slug")
       .is("deleted_at", null);
     const slugCounts = new Map<string, number>();
-    allSlugs?.forEach((p) => {
+    allSlugs?.forEach((p: any) => {
       if (p.slug) slugCounts.set(p.slug, (slugCounts.get(p.slug) ?? 0) + 1);
     });
     let duplicateSlugsCount = 0;
