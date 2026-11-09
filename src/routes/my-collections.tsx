@@ -11,13 +11,13 @@ import {
 import { toast } from "sonner";
 import { FileText, RefreshCw, Lock, Calendar, Layers, ArrowLeft, ChevronDown, ChevronUp } from "lucide-react";
 import { publicImageUrl } from "@/components/ImageUploader";
+import { AppShell } from "@/components/AppShell";
 
 export const Route = createFileRoute("/my-collections")({
   head: () => ({
-    links: [{ rel: "canonical", href: "https://solidas.com.ng/my-collections" }],
     meta: [
-      { title: "My Collection History | SOLIDAS" },
-      { name: "robots", content: "noindex, nofollow" },
+      { title: "Collection History — SOLIDAS TILES AND MARBLE NIG. LIMITED" },
+      { name: "robots", content: "noindex, follow" },
     ],
   }),
   component: MyCollectionsHistoryPage,
@@ -64,7 +64,7 @@ function MyCollectionsHistoryPage() {
 
         const prods = await fetchProductsByIds(Array.from(allProductIds));
         const pMap: Record<string, any> = {};
-        prods.forEach((p) => { pMap[p.id] = p; });
+        prods.forEach((p: any) => { pMap[p.id] = p; });
 
         const colProdsMap: Record<string, any[]> = {};
         Object.entries(itemsByCol).forEach(([cId, cItems]) => {
@@ -109,39 +109,142 @@ function MyCollectionsHistoryPage() {
   };
 
   if (loading || busy) {
-    return <div className="container-app py-10 text-sm text-muted-foreground">Loading collection history…</div>;
+    return <AppShell><div className="container-app py-10 text-sm text-muted-foreground">Loading SOLIDAS collection history…</div></AppShell>;
   }
 
   if (!user) {
     return (
-      <div className="container-app py-10 max-w-md text-center space-y-4">
-        <FileText className="h-10 w-10 text-muted-foreground/40 mx-auto" />
-        <h2 className="font-display text-xl font-semibold">Sign in to view Collection History</h2>
-        <p className="text-xs text-muted-foreground">Your submitted project quotation requests are saved to your account history as permanent immutable records.</p>
-        <Link to="/auth" search={{ redirectTo: "/my-collections", autoPush: false }} className="inline-block rounded-md bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90">
-          Sign In
-        </Link>
-      </div>
+      <AppShell>
+        <div className="container-app py-12 max-w-md text-center space-y-4 mx-auto">
+          <FileText className="h-10 w-10 text-[#1E82A6] mx-auto" />
+          <h2 className="font-display text-xl font-bold text-foreground">Sign In to View Collection History</h2>
+          <p className="text-xs text-muted-foreground">Your submitted project quotation requests are saved to your account history as permanent immutable records.</p>
+          <Link to="/auth" search={{ redirectTo: "/my-collections", autoPush: false }} className="inline-block rounded-lg bg-[#C0262D] px-5 py-2.5 text-xs font-bold text-white hover:bg-[#9A1B21] transition shadow-sm">
+            Sign In to SOLIDAS
+          </Link>
+        </div>
+      </AppShell>
     );
   }
 
   return (
-    <div className="container-app py-6 space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border pb-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <Link to="/account" className="text-muted-foreground hover:text-foreground text-xs flex items-center gap-1">
-              <ArrowLeft className="h-3.5 w-3.5" /> Back to Account
+    <AppShell>
+      <div className="container-app py-6 space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border pb-4">
+          <div>
+            <div className="flex items-center gap-2">
+              <Link to="/account" className="text-muted-foreground hover:text-foreground text-xs font-bold flex items-center gap-1">
+                <ArrowLeft className="h-3.5 w-3.5" /> Back to Account
+              </Link>
+            </div>
+            <h1 className="font-display text-2xl font-bold text-foreground mt-1">SOLIDAS Collection History</h1>
+            <p className="text-sm text-muted-foreground mt-0.5">
+              Permanent immutable record of your submitted project quotation requests to SOLIDAS TILES AND MARBLE NIG. LIMITED.
+            </p>
+          </div>
+          <Link to="/collection" className="inline-flex items-center gap-2 rounded-lg bg-[#1E82A6] px-4 py-2 text-xs font-bold text-white hover:bg-[#166481] transition shrink-0 shadow-sm">
+            <Layers className="h-4 w-4" /> Go to Active Workspace
+          </Link>
+        </div>
+
+        {historyCollections.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-border bg-white p-10 text-center space-y-3">
+            <FileText className="h-10 w-10 text-muted-foreground/40 mx-auto" />
+            <h3 className="font-bold text-base text-foreground">No Submitted Quotation Requests Yet</h3>
+            <p className="text-xs text-muted-foreground max-w-md mx-auto">
+              When you submit a building material collection via Push to WhatsApp, a permanent record will be stored here.
+            </p>
+            <Link to="/collection" className="inline-block rounded-lg bg-[#C0262D] px-4 py-2.5 text-xs font-bold text-white hover:bg-[#9A1B21] transition shadow-sm">
+              Open Active Project Workspace
             </Link>
           </div>
-          <h1 className="font-display text-2xl font-semibold mt-1">My Collection History</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">
-            Permanent immutable record of your submitted project quotation requests.
-          </p>
-        </div>
-        <Link to="/collection" className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-700 transition shrink-0">
-          <Layers className="h-4 w-4" /> Go to Active Workspace
-        </Link>
-      </div>
+        ) : (
+          <div className="space-y-4">
+            {historyCollections.map((col) => {
+              const prods = productsMap[col.id] || [];
+              const isDuplicating = duplicatingId === col.id;
+              const isExpanded = Boolean(expandedMap[col.id]);
+              let totalVal = 0;
+              prods.forEach((p) => { totalVal += Number(p.price || 0) * Number(p.quantity || 1); });
 
-      {historyCollections.length === 0 ? (\n        <div className="rounded-xl border border-dashed border-border p-10 text-center space-y-3">\n          <FileText className="h-10 w-10 text-muted-foreground/40 mx-auto" />\n          <h3 className="font-semibold text-base">No Submitted Quotation Requests Yet</h3>\n          <p className="text-xs text-muted-foreground max-w-md mx-auto">\n            When you submit a project collection via Push to WhatsApp, a permanent immutable record will be stored here.\n          </p>\n          <Link to="/collection" className="inline-block rounded-md bg-primary px-4 py-2 text-xs font-medium text-primary-foreground">\n            Open Active Project Workspace\n          </Link>\n        </div>\n      ) : (\n        <div className="space-y-4">\n          {historyCollections.map((col) => {\n            const prods = productsMap[col.id] || [];\n            const isDuplicating = duplicatingId === col.id;\n            const isExpanded = Boolean(expandedMap[col.id]);\n            let totalVal = 0;\n            prods.forEach((p) => { totalVal += Number(p.price || 0) * Number(p.quantity || 1); });\n\n            return (\n              <div key={col.id} className="rounded-xl border border-border bg-card overflow-hidden shadow-sm hover:border-primary/40 transition">\n                {/* Header Collapsed Card Row */}\n                <div className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">\n                  <div className="space-y-1">\n                    <div className="flex flex-wrap items-center gap-2">\n                      <h3 className="font-display text-base font-semibold">{col.name || "Project Request"}</h3>\n                      {col.reference_number && (\n                        <span className="rounded-md bg-surface-2 text-foreground text-xs font-mono font-bold px-2.5 py-0.5 border border-border">\n                          {col.reference_number}\n                        </span>\n                      )}\n                      <span className="rounded-full bg-primary/10 text-primary text-xs font-semibold px-2 py-0.5 border border-primary/20">\n                        v{col.version || 1}\n                      </span>\n                      <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 text-amber-700 dark:text-amber-300 text-xs font-medium px-2 py-0.5 border border-amber-500/20">\n                        <Lock className="h-3 w-3" /> Immutable Record\n                      </span>\n                    </div>\n                    <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">\n                      <span className="flex items-center gap-1">\n                        <Calendar className="h-3.5 w-3.5" />\n                        Submitted on {new Date(col.submitted_at || col.created_at).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}\n                      </span>\n                      <span>• {prods.length} Products</span>\n                      <span>• Est. Total: <strong className="text-foreground">₦{totalVal.toLocaleString()}</strong></span>\n                      <span>• Status: <strong className="text-foreground">{col.status || "Submitted"}</strong></span>\n                    </div>\n                  </div>\n\n                  <div className="flex items-center gap-2 shrink-0">\n                    <button\n                      onClick={() => toggleExpand(col.id)}\n                      className="inline-flex items-center gap-1 text-xs font-semibold text-muted-foreground hover:text-foreground px-3 py-2 rounded-lg border border-border bg-background hover:bg-surface-2 transition"\n                    >\n                      {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}\n                      <span>{isExpanded ? "Hide Details" : `View Products (${prods.length})`}</span>\n                    </button>\n\n                    {/* Create Updated Request (v+1) Action Button */}\n                    <button\n                      onClick={() => handleCreateUpdatedRequest(col.id)}\n                      disabled={isDuplicating}\n                      className="inline-flex items-center gap-2 rounded-lg bg-amber-600 px-4 py-2 text-xs font-semibold text-white hover:bg-amber-700 transition shadow-sm"\n                    >\n                      <RefreshCw className={`h-3.5 w-3.5 ${isDuplicating ? "animate-spin" : ""}`} />\n                      Duplicate to Active Workspace\n                    </button>\n                  </div>\n                </div>\n\n                {/* Expandable Detailed Product Breakdown Panel */}\n                {isExpanded && (\n                  <div className="border-t border-border/70 bg-surface-2/30 p-4 sm:p-5 space-y-3">\n                    <div className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center justify-between">\n                      <span>Products Breakdown ({prods.length})</span>\n                      <span>Est. Total: <strong className="text-foreground">₦{totalVal.toLocaleString()}</strong></span>\n                    </div>\n\n                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">\n                      {prods.map((p, idx) => (\n                        <div key={`${col.id}-${p.id || idx}`} className="rounded-lg border border-border bg-background p-3 flex items-start gap-3">\n                          <img src={publicImageUrl(p.generated_studio_image) || publicImageUrl(p.image_url) || ""} alt={p.name} className="h-12 w-12 rounded-md object-cover bg-muted border border-border/40 shrink-0" />\n                          <div className="min-w-0 flex-1 text-xs space-y-0.5">\n                            <p className="font-semibold text-foreground truncate">{p.name}</p>\n                            <p className="text-muted-foreground">Code: {p.code} — <strong className="text-primary">{p.quantity} {p.unit}</strong></p>\n                            {p.location && <p className="text-muted-foreground/80 truncate">Loc: {p.location}</p>}\n                            {p.delivery && <p className="text-muted-foreground/80 truncate">Delivery: {p.delivery}</p>}\n                            {p.notes && <p className="text-muted-foreground/80 italic truncate">Notes: {p.notes}</p>}\n                          </div>\n                        </div>\n                      ))}\n                    </div>\n                  </div>\n                )}\n              </div>\n            );\n          })}\n        </div>\n      )}\n    </div>\n  );\n}\n
+              return (
+                <div key={col.id} className="rounded-xl border border-border bg-white overflow-hidden shadow-xs hover:border-[#1E82A6]/40 transition">
+                  <div className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div className="space-y-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="font-display text-base font-bold text-foreground">{col.name || "Project Request"}</h3>
+                        {col.reference_number && (
+                          <span className="rounded-md bg-surface-2 text-[#1E82A6] text-xs font-mono font-bold px-2.5 py-0.5 border border-border">
+                            {col.reference_number}
+                          </span>
+                        )}
+                        <span className="rounded-full bg-[#1E82A6]/10 text-[#1E82A6] text-xs font-bold px-2 py-0.5 border border-[#1E82A6]/20">
+                          v{col.version || 1}
+                        </span>
+                        <span className="inline-flex items-center gap-1 rounded-full bg-[#1E82A6]/10 text-[#1E82A6] text-xs font-bold px-2 py-0.5 border border-[#1E82A6]/20">
+                          <Lock className="h-3 w-3" /> Immutable Record
+                        </span>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+                        <span className="flex items-center gap-1">
+                          <Calendar className="h-3.5 w-3.5 text-[#1E82A6]" />
+                          Submitted on {new Date(col.submitted_at || col.created_at).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}
+                        </span>
+                        <span>• {prods.length} Materials</span>
+                        <span>• Est. Total: <strong className="text-foreground font-bold">₦{totalVal.toLocaleString()}</strong></span>
+                        <span>• Status: <strong className="text-foreground font-bold">{col.status || "Submitted"}</strong></span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        onClick={() => toggleExpand(col.id)}
+                        className="inline-flex items-center gap-1 text-xs font-bold text-muted-foreground hover:text-foreground px-3 py-2 rounded-lg border border-border bg-white hover:bg-surface-2 transition"
+                      >
+                        {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                        <span>{isExpanded ? "Hide Details" : `View Products (${prods.length})`}</span>
+                      </button>
+
+                      <button
+                        onClick={() => handleCreateUpdatedRequest(col.id)}
+                        disabled={isDuplicating}
+                        className="inline-flex items-center gap-2 rounded-lg bg-[#C0262D] px-4 py-2 text-xs font-bold text-white hover:bg-[#9A1B21] transition shadow-xs"
+                      >
+                        <RefreshCw className={`h-3.5 w-3.5 ${isDuplicating ? "animate-spin" : ""}`} />
+                        Duplicate to Active Workspace
+                      </button>
+                    </div>
+                  </div>
+
+                  {isExpanded && (
+                    <div className="border-t border-border bg-surface-2 p-4 sm:p-5 space-y-3">
+                      <div className="text-xs font-bold uppercase tracking-wider text-[#1E82A6] flex items-center justify-between">
+                        <span>Materials Breakdown ({prods.length})</span>
+                        <span>Est. Total: <strong className="text-foreground">₦{totalVal.toLocaleString()}</strong></span>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {prods.map((p, idx) => (
+                          <div key={`${col.id}-${p.id || idx}`} className="rounded-lg border border-border bg-white p-3 flex items-start gap-3">
+                            <img src={publicImageUrl(p.generated_studio_image) || publicImageUrl(p.image_url) || ""} alt={p.name} className="h-12 w-12 rounded-md object-cover bg-surface-2 border border-border shrink-0" />
+                            <div className="min-w-0 flex-1 text-xs space-y-0.5">
+                              <p className="font-bold text-foreground truncate">{p.name}</p>
+                              <p className="text-muted-foreground">Code: {p.code} — <strong className="text-[#1E82A6] font-bold">{p.quantity} {p.unit}</strong></p>
+                              {p.location && <p className="text-muted-foreground truncate">Loc: {p.location}</p>}
+                              {p.delivery && <p className="text-muted-foreground truncate">Delivery: {p.delivery}</p>}
+                              {p.notes && <p className="text-muted-foreground italic truncate">Notes: {p.notes}</p>}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </AppShell>
+  );
+}
