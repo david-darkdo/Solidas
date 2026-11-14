@@ -31,7 +31,7 @@ async function tryJSON<T = any>(
  */
 export const runProductDetailsEngine = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((data: { productId: string }) => {
+  .validator((data: { productId: string }) => {
     if (!data?.productId) throw new Error("productId required");
     return data;
   })

@@ -168,7 +168,7 @@ async function interpolatePrompt(supabase: any, templateText: string, product: a
 
 export const runProductPipeline = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((data: { productId: string }) => {
+  .validator((data: { productId: string }) => {
     if (!data?.productId) throw new Error("productId required");
     return data;
   })
@@ -236,7 +236,7 @@ export const runProductPipeline = createServerFn({ method: "POST" })
       // 2. Run Engine 2: Lifestyle Image Engine (if product has an original image)
       if (!anyCriticalFail && product.image_url) {
         const { generateStandaloneLifestyleImage } = await import("./lifestyle-image.functions");
-        await generateStandaloneLifestyleImage({ data: { productId } }).catch((err) => {
+        await generateStandaloneLifestyleImage({ data: { productId } }).catch((err: any) => {
           console.warn("Lifestyle image generation step non-critical warning:", err);
         });
       }
@@ -276,7 +276,7 @@ export const runProductPipeline = createServerFn({ method: "POST" })
 
 export const testLLMConnection = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((data: { prompt: string; systemPrompt: string }) => data)
+  .validator((data: { prompt: string; systemPrompt: string }) => data)
   .handler(async ({ data, context }) => {
     const { supabase } = context;
     let settingsRow: any = null;
@@ -326,7 +326,7 @@ export const testLLMConnection = createServerFn({ method: "POST" })
 
 export const testImageConnection = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((data: { prompt: string }) => data)
+  .validator((data: { prompt: string }) => data)
   .handler(async ({ data, context }) => {
     const { supabase } = context;
     let settingsRow: any = null;
@@ -419,7 +419,7 @@ export const getAIConfigDetails = createServerFn({ method: "GET" })
 
 export const updateAISettings = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((data: any) => data)
+  .validator((data: any) => data)
   .handler(async ({ data, context }) => {
     const { supabase } = context;
     const { data: current } = await supabase.from("app_settings").select("id").limit(1).maybeSingle();
@@ -521,7 +521,7 @@ export const rebuildAllSearchIndexes = createServerFn({ method: "POST" })
 
 export const runSandboxStage = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((data: { productId: string; stageKey: string }) => {
+  .validator((data: { productId: string; stageKey: string }) => {
     if (!data?.productId) throw new Error("productId required");
     if (!data?.stageKey) throw new Error("stageKey required");
     return data;

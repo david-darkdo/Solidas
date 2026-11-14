@@ -6,7 +6,7 @@ import { AppShell } from "@/components/AppShell";
 import { ProductCard } from "@/components/ProductCard";
 import { publicImageUrl } from "@/components/ImageUploader";
 import { ArrowRight, Layers } from "lucide-react";
-import { slugify } from "@/lib/slug";
+import { normalizeCategorySlug, slugify } from "@/lib/slug";
 import { getCanonicalProductUrl } from "@/lib/product-url";
 import { getProductionOrigin } from "@/lib/origin";
 
@@ -26,7 +26,14 @@ const hierarchyQuery = (splat: string, origin: string) =>
   queryOptions({
     queryKey: ["hierarchy", splat],
     queryFn: async (): Promise<ResolvedHierarchy> => {
-      const parts = splat.split("/").filter(Boolean);
+      const rawParts = splat.split("/").filter(Boolean);
+      const parts = rawParts.map((p) => {
+        try {
+          return decodeURIComponent(p);
+        } catch {
+          return p;
+        }
+      });
       if (parts.length === 0 || parts.length > 5) {
         throw notFound();
       }
@@ -53,31 +60,46 @@ const hierarchyQuery = (splat: string, origin: string) =>
         }
       }
 
-      const typeSlug = parts[0];
-      const categorySlug = parts[1] || null;
-      const slug3 = parts[2] || null;
-      const slug4 = parts[3] || null;
+      const typeSlug = slugify(parts[0]);
+      const categorySlug = parts[1] ? normalizeCategorySlug(parts[1]) : null;
+      const slug3 = parts[2] ? slugify(parts[2]) : null;
+      const slug4 = parts[3] ? slugify(parts[3]) : null;
 
       // 1. Resolve Type
-      const { data: type } = await supabase
+      const { data: allTypes } = await supabase
         .from("product_types")
-        .select("id, name, slug, code_prefix")
-        .eq("slug", typeSlug)
-        .maybeSingle();
+        .select("id, name, slug, code_prefix");
+      const rawType = (allTypes ?? []).find(
+        (t) => slugify(t.slug) === typeSlug || slugify(t.name) === typeSlug
+      );
 
-      if (!type) throw notFound();
+      if (!rawType) throw notFound();
+      const type = {
+        ...rawType,
+        name: rawType.name.trim(),
+        slug: slugify(rawType.slug || rawType.name),
+      };
 
       // 2. Resolve Category if provided
       let category = null;
       if (categorySlug) {
-        const { data: cat } = await supabase
+        const { data: catsForType } = await supabase
           .from("categories")
           .select("id, name, slug, type_id")
-          .eq("type_id", type.id)
-          .eq("slug", categorySlug)
-          .maybeSingle();
-        if (!cat) throw notFound();
-        category = cat;
+          .eq("type_id", type.id);
+        const rawCat = (catsForType ?? []).find(
+          (c) =>
+            normalizeCategorySlug(c.slug) === categorySlug ||
+            normalizeCategorySlug(c.name) === categorySlug ||
+            slugify(c.slug) === slugify(parts[1]) ||
+            slugify(c.name) === slugify(parts[1])
+        );
+        if (!rawCat) throw notFound();
+        category = {
+          ...rawCat,
+          name: rawCat.name.trim(),
+          slug: normalizeCategorySlug(rawCat.slug || rawCat.name),
+        };
       }
 
       // 3 & 4. Resolve Subcategory and Family Group based on parts length
@@ -87,65 +109,96 @@ const hierarchyQuery = (splat: string, origin: string) =>
       if (category && parts.length === 3 && slug3) {
         // 3-part URL: /type/category/slug3
         // Check if slug3 is a Subcategory first
-        const { data: sub } = await supabase
+        const { data: subsForCatAll } = await supabase
           .from("subcategories")
           .select("id, name, slug, category_id")
-          .eq("category_id", category.id)
-          .eq("slug", slug3)
-          .maybeSingle();
+          .eq("category_id", category.id);
+        const rawSub = (subsForCatAll ?? []).find(
+          (s) => slugify(s.slug) === slug3 || slugify(s.name) === slug3
+        );
 
-        if (sub) {
-          subcategory = sub;
+        if (rawSub) {
+          subcategory = {
+            ...rawSub,
+            name: rawSub.name.trim(),
+            slug: slugify(rawSub.slug || rawSub.name),
+          };
         } else {
-          // If not a subcategory, check if slug3 is a Family Group under this category
-          const { data: subsForCat } = await supabase
-            .from("subcategories")
-            .select("id")
-            .eq("category_id", category.id);
+          // If not a subcategory, check if slug3 is a Family Group under this category's subcategories
+          const subIds = (subsForCatAll || []).map((s) => s.id);
+          if (subIds.length === 0) throw notFound();
 
-          const subIds = (subsForCat || []).map((s) => s.id);
+          const { data: famsForCat } = await supabase
+            .from("family_groups")
+            .select("id, name, slug, subcategory_id, custom_ai_prompt_override")
+            .in("subcategory_id", subIds);
+          const rawFam = (famsForCat ?? []).find(
+            (f) => slugify(f.slug) === slug3 || slugify(f.name) === slug3
+          );
+          if (!rawFam) throw notFound();
 
-          let famQuery = supabase.from("family_groups").select("id, name, slug, subcategory_id, custom_ai_prompt_override").eq("slug", slug3);
-          if (subIds.length > 0) {
-            famQuery = famQuery.or(`subcategory_id.in.(${subIds.join(",")}),category_id.eq.${category.id}`);
-          } else {
-            famQuery = famQuery.eq("category_id", category.id);
-          }
-
-          const { data: fam } = await famQuery.maybeSingle();
-          if (!fam) throw notFound();
-
-          family = fam;
-          if (fam.subcategory_id) {
-            const { data: parentSub } = await supabase
-              .from("subcategories")
-              .select("id, name, slug, category_id")
-              .eq("id", fam.subcategory_id)
-              .maybeSingle();
-            if (parentSub) subcategory = parentSub;
+          family = {
+            ...rawFam,
+            name: rawFam.name.trim(),
+            slug: slugify(rawFam.slug || rawFam.name),
+          };
+          if (rawFam.subcategory_id) {
+            const parentSub = (subsForCatAll ?? []).find((s) => s.id === rawFam.subcategory_id);
+            if (parentSub) {
+              subcategory = {
+                ...parentSub,
+                name: parentSub.name.trim(),
+                slug: slugify(parentSub.slug || parentSub.name),
+              };
+            }
           }
         }
       } else if (category && parts.length === 4 && slug3 && slug4) {
         // 4-part URL: /type/category/subcategory/family
-        const { data: sub } = await supabase
+        const { data: subsForCatAll } = await supabase
           .from("subcategories")
           .select("id, name, slug, category_id")
-          .eq("category_id", category.id)
-          .eq("slug", slug3)
-          .maybeSingle();
+          .eq("category_id", category.id);
+        const rawSub = (subsForCatAll ?? []).find(
+          (s) => slugify(s.slug) === slug3 || slugify(s.name) === slug3
+        );
 
-        if (!sub) throw notFound();
-        subcategory = sub;
+        if (!rawSub) throw notFound();
+        subcategory = {
+          ...rawSub,
+          name: rawSub.name.trim(),
+          slug: slugify(rawSub.slug || rawSub.name),
+        };
 
-        const { data: fam } = await supabase
+        const { data: famsForSub } = await supabase
           .from("family_groups")
           .select("id, name, slug, subcategory_id, custom_ai_prompt_override")
-          .eq("subcategory_id", sub.id)
-          .eq("slug", slug4)
-          .maybeSingle();
+          .eq("subcategory_id", subcategory.id);
+        const rawFam = (famsForSub ?? []).find(
+          (f) => slugify(f.slug) === slug4 || slugify(f.name) === slug4
+        );
 
-        if (!fam) throw notFound();
-        family = fam;
+        if (!rawFam) throw notFound();
+        family = {
+          ...rawFam,
+          name: rawFam.name.trim(),
+          slug: slugify(rawFam.slug || rawFam.name),
+        };
+      }
+
+      // Redirect legacy/malformed category or hierarchy URLs (e.g. /tiles/ceramics-tiles -> /tiles/ceramics) with HTTP 301
+      const canonicalSegments = [type.slug];
+      if (category) canonicalSegments.push(category.slug);
+      if (subcategory) canonicalSegments.push(subcategory.slug);
+      if (family) canonicalSegments.push(family.slug);
+      const canonicalSplat = canonicalSegments.join("/");
+      const requestedSplat = rawParts.join("/");
+      if (requestedSplat !== canonicalSplat) {
+        const base = (origin || getProductionOrigin()).replace(/\/+$/, "");
+        throw redirect({
+          href: `${base}/${canonicalSplat}`,
+          statusCode: 301,
+        });
       }
 
       // 5. Fetch Products
@@ -180,27 +233,47 @@ const hierarchyQuery = (splat: string, origin: string) =>
           .select("id, name, slug")
           .eq("type_id", type.id)
           .order("name");
-        childCategories = data ?? [];
+        childCategories = (data ?? []).map((c: any) => ({
+          ...c,
+          name: c.name.trim(),
+          slug: normalizeCategorySlug(c.slug || c.name),
+        }));
       } else if (!subcategory) {
         const { data: subs } = await supabase
           .from("subcategories")
           .select("id, name, slug")
           .eq("category_id", category.id)
           .order("name");
-        childSubcategories = subs ?? [];
+        childSubcategories = (subs ?? []).map((s: any) => ({
+          ...s,
+          name: s.name.trim(),
+          slug: slugify(s.slug || s.name),
+        }));
 
-        const { data: fams } = await (supabase.from("family_groups") as any)
-          .select("id, name, slug")
-          .eq("category_id", category.id)
-          .order("name");
-        childFamilies = fams ?? [];
+        const subIds = childSubcategories.map((s: any) => s.id);
+        if (subIds.length > 0) {
+          const { data: fams } = await supabase
+            .from("family_groups")
+            .select("id, name, slug")
+            .in("subcategory_id", subIds)
+            .order("name");
+          childFamilies = (fams ?? []).map((f: any) => ({
+            ...f,
+            name: f.name.trim(),
+            slug: slugify(f.slug || f.name),
+          }));
+        }
       } else if (!family) {
         const { data: fams } = await supabase
           .from("family_groups")
           .select("id, name, slug")
           .eq("subcategory_id", subcategory.id)
           .order("name");
-        childFamilies = fams ?? [];
+        childFamilies = (fams ?? []).map((f: any) => ({
+          ...f,
+          name: f.name.trim(),
+          slug: slugify(f.slug || f.name),
+        }));
       }
 
       return {

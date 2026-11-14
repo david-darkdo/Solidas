@@ -13,10 +13,9 @@ export const Route = createFileRoute("/auth")({
     };
   },
   head: () => ({
-    links: [{ rel: "canonical", href: "https://solidas.com.ng/auth" }],
     meta: [
       { title: "Sign In / Register | SOLIDAS" },
-      { name: "robots", content: "noindex, nofollow" },
+      { name: "robots", content: "noindex, follow" },
     ],
   }),
   component: AuthPage,

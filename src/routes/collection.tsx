@@ -35,10 +35,9 @@ export const Route = createFileRoute("/collection")({
     };
   },
   head: () => ({
-    links: [{ rel: "canonical", href: "https://solidas.com.ng/collection" }],
     meta: [
       { title: "Project Quotation Workspace | SOLIDAS" },
-      { name: "robots", content: "noindex, nofollow" },
+      { name: "robots", content: "noindex, follow" },
     ],
   }),
   component: CollectionPage,

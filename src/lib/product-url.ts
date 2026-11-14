@@ -7,18 +7,23 @@ export interface MinimumProductInfo {
   name?: string | null;
 }
 
+export function stripDraftSlugPrefix(slug: string): string {
+  return slug.replace(/^draft-(?:img-)?/i, "");
+}
+
 /**
  * Returns the single authoritative normalized slug for a product.
  * Prefers product.slug if present, otherwise slugifies product.name, fallback to product.id.
+ * Always strips any legacy `draft-` or `draft-img-` prefix so published URLs are clean.
  */
 export function getCanonicalProductSlug(product: MinimumProductInfo | null | undefined): string {
   if (!product) return "";
   if (product.slug) {
-    const clean = slugify(product.slug);
+    const clean = stripDraftSlugPrefix(slugify(product.slug));
     if (clean) return clean;
   }
   if (product.name) {
-    const clean = slugify(product.name);
+    const clean = stripDraftSlugPrefix(slugify(product.name));
     if (clean) return clean;
   }
   return product.id || "";

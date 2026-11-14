@@ -1,4 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
+import { normalizeCategorySlug, slugify } from "@/lib/slug";
 
 export type ProductRow = {
   id: string;
@@ -49,9 +50,9 @@ export async function fetchTaxonomy() {
   if (categories.error) throw categories.error;
   if (subcategories.error) throw subcategories.error;
   return {
-    types: types.data ?? [],
-    categories: categories.data ?? [],
-    subcategories: subcategories.data ?? [],
+    types: (types.data ?? []).map((t) => ({ ...t, name: t.name.trim(), slug: slugify(t.slug) })),
+    categories: (categories.data ?? []).map((c) => ({ ...c, name: c.name.trim(), slug: normalizeCategorySlug(c.slug) })),
+    subcategories: (subcategories.data ?? []).map((s) => ({ ...s, name: s.name.trim(), slug: slugify(s.slug) })),
   };
 }
 
@@ -147,8 +148,12 @@ export async function fetchFeedProductsPaginated(
       if (data?.id) byIdQuery = byIdQuery.eq("type_id", data.id);
     }
     if (filters.category) {
-      const { data } = await supabase.from("categories").select("id").eq("slug", filters.category).maybeSingle();
-      if (data?.id) byIdQuery = byIdQuery.eq("category_id", data.id);
+      const targetCat = normalizeCategorySlug(filters.category);
+      const { data: allCats } = await supabase.from("categories").select("id,slug,name");
+      const matchedCat = (allCats ?? []).find(
+        (c) => normalizeCategorySlug(c.slug) === targetCat || normalizeCategorySlug(c.name) === targetCat
+      );
+      if (matchedCat?.id) byIdQuery = byIdQuery.eq("category_id", matchedCat.id);
     }
     if (filters.subcategory) {
       const { data } = await supabase.from("subcategories").select("id").eq("slug", filters.subcategory).maybeSingle();
@@ -186,12 +191,12 @@ export async function fetchFeedProductsPaginated(
     if (data?.id) query = query.eq("type_id", data.id);
   }
   if (filters.category) {
-    const { data } = await supabase
-      .from("categories")
-      .select("id")
-      .eq("slug", filters.category)
-      .maybeSingle();
-    if (data?.id) query = query.eq("category_id", data.id);
+    const targetCat = normalizeCategorySlug(filters.category);
+    const { data: allCats } = await supabase.from("categories").select("id,slug,name");
+    const matchedCat = (allCats ?? []).find(
+      (c) => normalizeCategorySlug(c.slug) === targetCat || normalizeCategorySlug(c.name) === targetCat
+    );
+    if (matchedCat?.id) query = query.eq("category_id", matchedCat.id);
   }
   if (filters.subcategory) {
     const { data } = await supabase
@@ -286,10 +291,22 @@ export async function fetchHomepageFeatured(): Promise<ProductRow[]> {
 }
 
 export async function fetchProductBySlug(slug: string) {
+  const normalized = slugify(slug);
+  const clean = normalized.replace(/^draft-(?:img-)?/i, "");
+  const candidates = Array.from(
+    new Set([
+      slug,
+      normalized,
+      clean,
+      `draft-${clean}`,
+      `draft-img-${clean}`,
+    ].filter(Boolean))
+  );
   const { data, error } = await applyPublicFilters(
     supabase.from("products").select("*"),
   )
-    .eq("slug", slug)
+    .in("slug", candidates)
+    .limit(1)
     .maybeSingle();
   if (error) throw error;
   return data;

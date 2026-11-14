@@ -47,7 +47,7 @@ function NotFoundComponent() {
   );
 }
 
-function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
+function ErrorComponent({ error, reset }: { error: any; reset: () => void }) {
   console.error(error);
   const router = useRouter();
 
@@ -148,9 +148,6 @@ function RootShell({ children }: { children: ReactNode }) {
   const origin = getProductionOrigin();
   const loaderData = Route.useLoaderData();
   const settings = loaderData?.settings;
-  const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const canonicalPath = pathname === "/" ? "/" : pathname.replace(/\/+$/, "");
-  const canonicalUrl = `${origin}${canonicalPath}`;
 
   const sameAsLinks = [
     settings?.facebook_url,
@@ -216,7 +213,6 @@ function RootShell({ children }: { children: ReactNode }) {
     <html lang="en">
       <head>
         <HeadContent />
-        <link rel="canonical" href={canonicalUrl} />
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationSchema) }}
@@ -313,29 +309,8 @@ function RootAppWrapper() {
     void registerDevice();
   }, [user?.id, pathname]);
 
-  const loaderData = Route.useLoaderData();
-  const settings = loaderData?.settings;
-  const origin = getProductionOrigin();
-  const orgSchema = {
-    "@context": "https://schema.org",
-    "@type": "Organization",
-    "name": "SOLIDAS TILES AND MARBLE NIG. LIMITED",
-    "alternateName": "SOLIDAS",
-    "url": origin,
-    "logo": (settings as any)?.company_logo || `${origin}/logo.png`,
-    "contactPoint": {
-      "@type": "ContactPoint",
-      "telephone": settings?.support_whatsapp || "08035186355",
-      "contactType": "sales & customer support"
-    }
-  };
-
   return (
     <div className="relative min-h-screen bg-background">
-      <script 
-        type="application/ld+json" 
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(orgSchema) }} 
-      />
       {/* Full Page Breathing Logo Loading Screen */}
       {(() => {
         const isApiRoute = pathname === "/robots.txt" || pathname === "/sitemap.xml" || pathname.startsWith("/api/");
@@ -345,7 +320,20 @@ function RootAppWrapper() {
           <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-white/40 backdrop-blur-xs transition-all duration-300 animate-fade-in">
             <style>{`
               @keyframes breathing {
-                0%, 100% { transform: scale(0.95); opacity: 0.4; }\n                50% { transform: scale(1.05); opacity: 0.85; }\n              }\n              @keyframes fadeIn {\n                from { opacity: 0; }\n                to { opacity: 1; }\n              }\n              .animate-breathing {\n                animation: breathing 2s ease-in-out infinite;\n              }\n              .animate-fade-in {\n                animation: fadeIn 0.2s ease-out forwards;\n              }\n            `}</style>
+                0%, 100% { transform: scale(0.95); opacity: 0.4; }
+                50% { transform: scale(1.05); opacity: 0.85; }
+              }
+              @keyframes fadeIn {
+                from { opacity: 0; }
+                to { opacity: 1; }
+              }
+              .animate-breathing {
+                animation: breathing 2s ease-in-out infinite;
+              }
+              .animate-fade-in {
+                animation: fadeIn 0.2s ease-out forwards;
+              }
+            `}</style>
             <div className="flex flex-col items-center gap-3 animate-breathing">
               <img
                 src="/logo.png"

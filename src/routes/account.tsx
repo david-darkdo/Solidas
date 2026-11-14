@@ -15,7 +15,6 @@ import {
 
 export const Route = createFileRoute("/account")({
   head: () => ({
-    links: [{ rel: "canonical", href: "https://solidas.com.ng/account" }],
     meta: [
       { title: "My Account | SOLIDAS" },
       { name: "robots", content: "noindex, nofollow" },

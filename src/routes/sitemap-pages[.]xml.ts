@@ -1,9 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { getProductionOrigin } from "@/lib/origin";
 
-function escapeXml(str: string): string {
-  if (!str) return "";
-  return str
+function escapeXml(unsafe: string): string {
+  return unsafe
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
@@ -14,37 +13,36 @@ function escapeXml(str: string): string {
 export const Route = createFileRoute("/sitemap-pages.xml")({
   server: {
     handlers: {
-      GET: async ({ request }) => {
-        const origin = getProductionOrigin(request);
-        const now = new Date().toISOString();
+      GET: async () => {
+        const origin = getProductionOrigin();
+        const now = new Date().toISOString().split("T")[0];
 
-        const pages = [
-          { loc: `${origin}/`, priority: "1.0", changefreq: "daily" },
-          { loc: `${origin}/home`, priority: "0.9", changefreq: "daily" },
-          { loc: `${origin}/contact`, priority: "0.8", changefreq: "monthly" },
-          { loc: `${origin}/search`, priority: "0.7", changefreq: "daily" },
+        // Only canonical, indexable static pages (excludes /auth, /collection, /search, /account, /admin)
+        const staticPages = [
+          { path: "/", priority: "1.0", changefreq: "daily" },
+          { path: "/home", priority: "0.8", changefreq: "weekly" },
+          { path: "/contact", priority: "0.8", changefreq: "monthly" },
         ];
 
-        const urlEntries = pages
-          .map(
-            (p) => `  <url>
-    <loc>${escapeXml(p.loc)}</loc>
+        const urls: string[] = staticPages.map(
+          (page) => `  <url>
+    <loc>${escapeXml(`${origin}${page.path}`)}</loc>
     <lastmod>${now}</lastmod>
-    <changefreq>${p.changefreq}</changefreq>
-    <priority>${p.priority}</priority>
+    <changefreq>${page.changefreq}</changefreq>
+    <priority>${page.priority}</priority>
   </url>`
-          )
-          .join("\n");
+        );
 
         const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-${urlEntries}
+${urls.join("\n")}
 </urlset>`;
 
         return new Response(xml, {
+          status: 200,
           headers: {
             "Content-Type": "application/xml; charset=utf-8",
-            "Cache-Control": "public, max-age=3600, s-maxage=18000",
+            "Cache-Control": "public, max-age=3600, s-maxage=3600",
           },
         });
       },

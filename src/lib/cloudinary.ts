@@ -13,7 +13,7 @@ export function getPublicIdFromUrl(url: string): string | null {
 // Server action to delete an image from Cloudinary
 export const deleteCloudinaryImage = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((data: { url: string }) => {
+  .validator((data: { url: string }) => {
     if (!data?.url) throw new Error("Cloudinary image URL is required");
     return data;
   })

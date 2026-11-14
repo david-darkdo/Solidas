@@ -74,10 +74,16 @@ export function SiteFooter() {
 
         <div>
           <div className="text-xs font-bold uppercase tracking-wider text-[#1E82A6]">Showroom Discovery</div>
-          <ul className="mt-4 space-y-2.5 text-sm">
-            <li><Link to="/home" className="text-muted-foreground hover:text-[#1E82A6] transition">Showroom Home</Link></li>
-            <li><Link to="/search" search={{ q: "" }} className="text-muted-foreground hover:text-[#1E82A6] transition">Material Catalog & Search</Link></li>
-            <li><Link to="/collection" className="text-muted-foreground hover:text-[#1E82A6] transition">Project Collection Workspace</Link></li>
+          <ul className="mt-4 space-y-2 text-sm">
+            <li><Link to="/" className="text-muted-foreground hover:text-[#1E82A6] transition">Showroom Catalog</Link></li>
+            <li><Link to="/home" className="text-muted-foreground hover:text-[#1E82A6] transition">Video Showcase & Profile</Link></li>
+            <li><a href="/tiles" className="text-muted-foreground hover:text-[#1E82A6] transition">All Tiles & Slabs</a></li>
+            <li><a href="/tiles/ceramics" className="text-muted-foreground hover:text-[#1E82A6] transition">Ceramics Tiles</a></li>
+            <li><a href="/tiles/granite" className="text-muted-foreground hover:text-[#1E82A6] transition">Granite Tiles</a></li>
+            <li><a href="/tiles/marble" className="text-muted-foreground hover:text-[#1E82A6] transition">Marble Tiles</a></li>
+            <li><a href="/doors" className="text-muted-foreground hover:text-[#1E82A6] transition">Security & Interior Doors</a></li>
+            <li><a href="/doors/foreign" className="text-muted-foreground hover:text-[#1E82A6] transition">Foreign Doors</a></li>
+            <li><a href="/doors/local" className="text-muted-foreground hover:text-[#1E82A6] transition">Local Doors</a></li>
             <li><Link to="/contact" className="text-muted-foreground hover:text-[#1E82A6] transition">Contact & Head Office</Link></li>
           </ul>
         </div>

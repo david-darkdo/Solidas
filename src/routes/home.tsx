@@ -33,22 +33,22 @@ export const Route = createFileRoute("/home")({
     const origin = getProductionOrigin();
     return {
       meta: [
-        { title: "SOLIDAS TILES AND MARBLE NIG. LIMITED — Architectural Showroom" },
+        { title: "Project Video Showcase & Architectural Profile | SOLIDAS Abuja" },
         {
           name: "description",
           content:
-            "SOLIDAS TILES AND MARBLE NIG. LIMITED is your trusted supplier of premium tiles, marble, granite, foreign security doors, wooden doors, PVC ceiling and architectural building materials in Abuja.",
+            "Watch real-world installation videos, showroom walkthroughs, and architectural project highlights from SOLIDAS TILES AND MARBLE NIG. LIMITED in Dei-Dei, Abuja.",
         },
-        { property: "og:title", content: "SOLIDAS — Premium Building Materials Showroom" },
+        { property: "og:title", content: "Project Video Showcase & Architectural Profile | SOLIDAS Abuja" },
         {
           property: "og:description",
-          content: "Dealers & Suppliers of Tiles, Marble, Granite, Security Doors & Architectural Finishes.",
+          content: "Watch installation videos, showroom walkthroughs, and architectural building material highlights by SOLIDAS in Abuja.",
         },
         { property: "og:type", content: "website" },
         { property: "og:url", content: `${origin}/home` },
         { name: "twitter:card", content: "summary_large_image" },
-        { name: "twitter:title", content: "SOLIDAS — Premium Building Materials Showroom" },
-        { name: "twitter:description", content: "Dealers & Suppliers of Tiles, Marble, Granite, Security Doors & Architectural Finishes in Abuja." },
+        { name: "twitter:title", content: "Project Video Showcase & Architectural Profile | SOLIDAS Abuja" },
+        { name: "twitter:description", content: "Watch installation videos, showroom walkthroughs, and architectural building material highlights by SOLIDAS in Abuja." },
       ],
       links: [
         { rel: "canonical", href: `${origin}/home` },
@@ -213,8 +213,8 @@ function HomePage() {
               <Sparkles className="h-3.5 w-3.5 text-[#1E82A6]" /> Architectural Materials Showroom
             </span>
 
-            <h1 className="font-display text-4xl sm:text-6xl font-extrabold leading-none tracking-tight text-white uppercase">
-              SOLIDAS
+            <h1 className="font-display text-3xl sm:text-5xl font-extrabold leading-tight tracking-tight text-white uppercase">
+              SOLIDAS Architectural Video Showcase & Experience
             </h1>
             <p className="font-display text-lg sm:text-2xl text-[#1E82A6] font-bold">
               SOLIDAS TILES AND MARBLE NIG. LIMITED
@@ -225,8 +225,7 @@ function HomePage() {
 
             <div className="flex flex-wrap gap-3 pt-3">
               <Link
-                to="/search"
-                search={{ q: "" }}
+                to="/"
                 className="inline-flex items-center gap-2 rounded-lg bg-[#C0262D] px-6 py-3.5 text-xs font-bold uppercase tracking-wider text-white hover:bg-[#9A1B21] transition shadow-lg"
               >
                 <Compass className="h-4 w-4" /> Explore Digital Showroom <ArrowRight className="h-4 w-4" />
@@ -367,9 +366,9 @@ function HomePage() {
                       className={`h-2 rounded-full transition-all duration-300 ${
                         currentShowcaseIndex === idx ? "w-6 bg-[#1E82A6]" : "w-2 bg-white/40 hover:bg-white/70"
                       }`}
-                      aria-label={`Go to video ${idx + 1}`}\
+                      aria-label={`Go to video ${idx + 1}`}
                     />
-                  ))}\
+                  ))}
                 </div>
 
                 {/* Arrow Controls */}

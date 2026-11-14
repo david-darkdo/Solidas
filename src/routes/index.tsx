@@ -46,17 +46,17 @@ export const Route = createFileRoute("/")({
     const origin = getProductionOrigin();
     return {
       meta: [
-        { title: "Discover — SOLIDAS TILES AND MARBLE NIG. LIMITED" },
+        { title: "SOLIDAS Tiles & Marble Nigeria Ltd | Luxury Tiles, Marble, Granite & Security Doors in Abuja" },
         {
           name: "description",
-          content: "Explore Nigeria's leading architectural catalogue for luxury tiles, marble, granite, foreign security doors, and building finishes at Solidas Dei Dei, Abuja.",
+          content: "Official digital showroom of SOLIDAS TILES AND MARBLE NIG. LIMITED in Dei-Dei, Abuja. Browse luxury ceramic & porcelain tiles, granite, marble, and foreign security doors with instant WhatsApp quotes.",
         },
-        { property: "og:title", content: "Discover — SOLIDAS TILES AND MARBLE NIG. LIMITED" },
-        { property: "og:description", content: "Explore Nigeria's leading architectural catalogue for luxury tiles, marble, granite, foreign security doors, and building finishes at Solidas Dei Dei, Abuja." },
+        { property: "og:title", content: "SOLIDAS Tiles & Marble Nigeria Ltd | Luxury Tiles, Marble, Granite & Security Doors in Abuja" },
+        { property: "og:description", content: "Official digital showroom of SOLIDAS TILES AND MARBLE NIG. LIMITED in Dei-Dei, Abuja. Browse luxury ceramic & porcelain tiles, granite, marble, and foreign security doors with instant WhatsApp quotes." },
         { property: "og:type", content: "website" },
         { property: "og:url", content: `${origin}/` },
         { name: "twitter:card", content: "summary_large_image" },
-        { name: "twitter:title", content: "Discover — SOLIDAS TILES AND MARBLE NIG. LIMITED" },
+        { name: "twitter:title", content: "SOLIDAS Tiles & Marble Nigeria Ltd | Luxury Tiles, Marble, Granite & Security Doors in Abuja" },
         { name: "twitter:description", content: "Dealers & Suppliers of General Building Materials: Tiles, Marble, Granite, Security Doors & Finishes in Abuja." },
       ],
       links: [
@@ -65,10 +65,10 @@ export const Route = createFileRoute("/")({
     };
   },
   component: FeedPage,
-  errorComponent: ({ error }) => {
+  errorComponent: ({ error }: { error: any }) => {
     return (
       <div className="p-6 text-sm text-[#C0262D] font-mono">
-        <div>Error: {error.message}</div>
+        <div>Error: {error?.message || String(error)}</div>
       </div>
     );
   },
@@ -244,6 +244,64 @@ function FeedPage() {
             </button>
           </div>
         )}
+
+        {/* Crawlable HTML Catalog Directory for Search Engine & User Discovery */}
+        <section
+          aria-label="Browse Showroom Categories and Specifications"
+          className="mt-10 rounded-xl border border-border bg-white p-5 shadow-2xs space-y-4"
+        >
+          <div>
+            <h2 className="font-display text-sm font-bold uppercase tracking-wider text-[#1E82A6]">
+              Browse Showroom by Material Category & Size
+            </h2>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Direct links to our full Abuja showroom collections for tiles, marble, granite, and security doors.
+            </p>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            {tax.types.map((t: any) => {
+              const cats = tax.categories.filter((c: any) => c.type_id === t.id);
+              return (
+                <div key={t.id} className="rounded-lg border border-border/70 bg-surface-2 p-3.5 space-y-2.5">
+                  <a
+                    href={`/${t.slug}`}
+                    className="font-display text-sm font-bold text-foreground hover:text-[#1E82A6] transition inline-block"
+                  >
+                    {t.name} Catalog →
+                  </a>
+                  <div className="space-y-2">
+                    {cats.map((c: any) => {
+                      const subs = tax.subcategories.filter((s: any) => s.category_id === c.id);
+                      return (
+                        <div key={c.id} className="text-xs">
+                          <a
+                            href={`/${t.slug}/${c.slug}`}
+                            className="font-semibold text-[#1E82A6] hover:underline"
+                          >
+                            {c.name}
+                          </a>
+                          {subs.length > 0 && (
+                            <div className="mt-1 flex flex-wrap gap-1.5">
+                              {subs.map((s: any) => (
+                                <a
+                                  key={s.id}
+                                  href={`/${t.slug}/${c.slug}/${s.slug}`}
+                                  className="rounded border border-border bg-white px-2 py-0.5 text-[11px] text-muted-foreground hover:border-[#1E82A6] hover:text-[#1E82A6] transition"
+                                >
+                                  {s.name}
+                                </a>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
       </div>
     </AppShell>
   );

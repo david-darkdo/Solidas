@@ -1,12 +1,10 @@
-import { createFileRoute } from '@tanstack/react-router';
-import { getProductionOrigin } from "@/lib/origin";
-import { getCanonicalProductUrl } from "@/lib/product-url";
+import { createFileRoute } from "@tanstack/react-router";
 import { supabase } from "@/integrations/supabase/client";
-import { publicImageUrl } from "@/components/ImageUploader";
+import { getProductionOrigin } from "@/lib/origin";
+import { getCanonicalProductSlug, getCanonicalProductUrl } from "@/lib/product-url";
 
-function escapeXml(str: string): string {
-  if (!str) return "";
-  return str
+function escapeXml(unsafe: string): string {
+  return unsafe
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
@@ -14,67 +12,105 @@ function escapeXml(str: string): string {
     .replace(/'/g, "&apos;");
 }
 
+function isValidProductionImageUrl(url: string | null | undefined): url is string {
+  if (!url || typeof url !== "string") return false;
+  const trimmed = url.trim();
+  if (!trimmed.startsWith("http://") && !trimmed.startsWith("https://")) return false;
+  if (trimmed.includes("parverhzjdhrzdcqajyw.supabase.co")) return false;
+  return true;
+}
+
 export const Route = createFileRoute("/sitemap-images.xml")({
   server: {
     handlers: {
-      GET: async ({ request }) => {
-        const origin = getProductionOrigin(request);
-        const items: { loc: string; imageLoc: string; title: string; caption: string }[] = [];
+      GET: async () => {
+        const origin = getProductionOrigin();
 
-        try {
-          const { data: products } = await supabase
-            .from("products" as any)
-            .select("id, slug, name, alt_text, seo_description, image_url, generated_installed_image, generated_studio_image")
+        const [productsRes, assetsRes] = await Promise.all([
+          supabase
+            .from("products")
+            .select(
+              "id, slug, name, code, short_description, image_url, generated_studio_image, generated_installed_image, image_title, image_caption, alt_text"
+            )
+            .eq("processing_state", "completed")
             .eq("status", "published")
             .eq("hidden", false)
-            .is("deleted_at", null);
+            .is("deleted_at", null)
+            .order("updated_at", { ascending: false }),
+          supabase.from("product_assets").select("product_id, asset_url"),
+        ]);
 
-          if (products) {
-            for (const p of (products as any[])) {
-              const productUrl = getCanonicalProductUrl(p, origin);
-              const title = p.name || "SOLIDAS Product";
-              const caption = p.alt_text || p.seo_description || title;
-
-              const rawImages = [p.image_url, p.generated_installed_image, p.generated_studio_image].filter(Boolean);
-              const processedUrls = Array.from(new Set(rawImages.map((img) => publicImageUrl(img)).filter(Boolean))) as string[];
-
-              for (const imgUrl of processedUrls) {
-                items.push({
-                  loc: productUrl,
-                  imageLoc: imgUrl,
-                  title: title,
-                  caption: caption,
-                });
-              }
-            }
-          }
-        } catch (err) {
-          console.error("Failed to generate sitemap-images:", err);
+        if (productsRes.error) {
+          console.error("[sitemap-images.xml] Database query failed:", productsRes.error);
+          return new Response("Error generating image sitemap", { status: 500 });
         }
 
-        const urlEntries = items
-          .map(
-            (item) => `  <url>
-    <loc>${escapeXml(item.loc)}</loc>
-    <image:image>
-      <image:loc>${escapeXml(item.imageLoc)}</image:loc>
-      <image:title>${escapeXml(item.title)}</image:title>
-      <image:caption>${escapeXml(item.caption)}</image:caption>
-    </image:image>
-  </url>`
-          )
-          .join("\n");
+        const assetsByProduct = new Map<string, string[]>();
+        for (const a of assetsRes.data || []) {
+          if (a.product_id && isValidProductionImageUrl(a.asset_url)) {
+            const list = assetsByProduct.get(a.product_id) || [];
+            list.push(a.asset_url.trim());
+            assetsByProduct.set(a.product_id, list);
+          }
+        }
+
+        const seenLocs = new Set<string>();
+        const urls: string[] = [];
+
+        for (const p of productsRes.data || []) {
+          const slug = getCanonicalProductSlug(p);
+          if (!slug || slug.startsWith("draft-")) continue;
+          const loc = getCanonicalProductUrl(p, origin);
+          if (seenLocs.has(loc)) continue;
+
+          const imgSet = new Set<string>();
+          if (isValidProductionImageUrl(p.generated_studio_image)) imgSet.add(p.generated_studio_image.trim());
+          if (isValidProductionImageUrl(p.image_url)) imgSet.add(p.image_url.trim());
+          if (isValidProductionImageUrl(p.generated_installed_image)) imgSet.add(p.generated_installed_image.trim());
+          for (const extraUrl of assetsByProduct.get(p.id) || []) {
+            imgSet.add(extraUrl);
+          }
+
+          if (imgSet.size === 0) continue;
+          seenLocs.add(loc);
+
+          const imgTitle = escapeXml(
+            (p as any).image_title || `${p.name}${p.code ? ` (${p.code})` : ""} | SOLIDAS`
+          );
+          const imgCaption = escapeXml(
+            (p as any).image_caption ||
+              (p as any).alt_text ||
+              p.short_description ||
+              `${p.name} supplied by SOLIDAS TILES AND MARBLE NIG. LIMITED in Abuja.`
+          );
+
+          const imageNodes = Array.from(imgSet)
+            .map(
+              (imgUrl) => `    <image:image>
+      <image:loc>${escapeXml(imgUrl)}</image:loc>
+      <image:title>${imgTitle}</image:title>
+      <image:caption>${imgCaption}</image:caption>
+    </image:image>`
+            )
+            .join("\n");
+
+          urls.push(`  <url>
+    <loc>${escapeXml(loc)}</loc>
+${imageNodes}
+  </url>`);
+        }
 
         const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
         xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">
-${urlEntries}
+${urls.join("\n")}
 </urlset>`;
 
         return new Response(xml, {
+          status: 200,
           headers: {
             "Content-Type": "application/xml; charset=utf-8",
-            "Cache-Control": "public, max-age=3600, s-maxage=18000",
+            "Cache-Control": "public, max-age=3600, s-maxage=3600",
           },
         });
       },

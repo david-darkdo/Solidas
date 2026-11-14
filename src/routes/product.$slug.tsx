@@ -14,6 +14,7 @@ import { toast } from "sonner";
 
 import { getProductionOrigin } from "@/lib/origin";
 import { getCanonicalProductSlug, getCanonicalProductUrl, getCanonicalProductPath } from "@/lib/product-url";
+import { normalizeCategorySlug, slugify } from "@/lib/slug";
 
 const productQuery = (slug: string) =>
   queryOptions({
@@ -49,7 +50,8 @@ export const Route = createFileRoute("/product/$slug")({
     context.queryClient.ensureQueryData(relatedQuery(product.family_id, product.id));
 
     // Fetch taxonomy parents
-    const [typeRes, categoryRes, subcategoryRes, familyRes] = await Promise.all([\n      product.type_id ? supabase.from("product_types").select("name, slug").eq("id", product.type_id).maybeSingle() : Promise.resolve({ data: null }),
+    const [typeRes, categoryRes, subcategoryRes, familyRes] = await Promise.all([
+      product.type_id ? supabase.from("product_types").select("name, slug").eq("id", product.type_id).maybeSingle() : Promise.resolve({ data: null }),
       product.category_id ? supabase.from("categories").select("name, slug").eq("id", product.category_id).maybeSingle() : Promise.resolve({ data: null }),
       product.subcategory_id ? supabase.from("subcategories").select("name, slug").eq("id", product.subcategory_id).maybeSingle() : Promise.resolve({ data: null }),
       product.family_id ? supabase.from("family_groups").select("name, slug").eq("id", product.family_id).maybeSingle() : Promise.resolve({ data: null }),
@@ -59,18 +61,60 @@ export const Route = createFileRoute("/product/$slug")({
       product,
       origin,
       taxonomy: {
-        type: typeRes.data,
-        category: categoryRes.data,
-        subcategory: subcategoryRes.data,
-        family: familyRes.data,
-      }
+        type: typeRes.data
+          ? { ...typeRes.data, name: typeRes.data.name.trim(), slug: slugify(typeRes.data.slug || typeRes.data.name) }
+          : null,
+        category: categoryRes.data
+          ? {
+              ...categoryRes.data,
+              name: categoryRes.data.name.trim(),
+              slug: normalizeCategorySlug(categoryRes.data.slug || categoryRes.data.name),
+            }
+          : null,
+        subcategory: subcategoryRes.data
+          ? {
+              ...subcategoryRes.data,
+              name: subcategoryRes.data.name.trim(),
+              slug: slugify(subcategoryRes.data.slug || subcategoryRes.data.name),
+            }
+          : null,
+        family: familyRes.data
+          ? {
+              ...familyRes.data,
+              name: familyRes.data.name.trim(),
+              slug: slugify(familyRes.data.slug || familyRes.data.name),
+            }
+          : null,
+      },
     };
   },
   head: ({ loaderData }: any): any => {
     const product = loaderData?.product;
+    const taxonomy = loaderData?.taxonomy;
     const origin = loaderData?.origin || getProductionOrigin();
-    const title = product?.seo_title || `${product?.name || "Product"} | SOLIDAS`;
-    const desc = product?.seo_description || product?.short_description || "Premium building material details.";
+
+    const baseName = product?.name?.trim() || "Building Material";
+    const code = product?.code?.trim() || "";
+    const dimension = (product?.size || taxonomy?.subcategory?.name || "")?.trim();
+    const color = product?.color?.trim() || "";
+    const finish = (product?.finish || product?.finish_name || "")?.trim();
+    const material = product?.material?.trim() || "";
+    const categoryName = taxonomy?.category?.name?.trim() || "";
+
+    const titleSpecs = [color, finish, dimension, material].filter(Boolean).slice(0, 3);
+    const generatedTitle = `${baseName}${titleSpecs.length ? ` — ${titleSpecs.join(", ")}` : ""}${code ? ` (${code})` : ""} | SOLIDAS Abuja`;
+    const title = product?.seo_title_manual && product?.seo_title ? product.seo_title : generatedTitle;
+
+    const descSpecs = [
+      dimension ? `size ${dimension}` : "",
+      material ? `${material} material` : "",
+      color ? `${color} colour` : "",
+      finish ? `${finish} finish` : "",
+    ].filter(Boolean);
+    const generatedDesc = `Buy ${baseName}${code ? ` (Code: ${code})` : ""}${categoryName ? ` in ${categoryName}` : ""}${descSpecs.length ? ` featuring ${descSpecs.join(", ")}` : ""} from SOLIDAS TILES AND MARBLE NIG. LIMITED in Dei-Dei, Abuja. ${product?.short_description || "Nationwide delivery and instant WhatsApp project quotes."}`.slice(0, 300);
+    const desc =
+      product?.seo_description_manual && product?.seo_description ? product.seo_description : generatedDesc;
+
     const imageUrl = product?.generated_studio_image || product?.image_url || "";
     const canonical = getCanonicalProductUrl(product, origin);
 
@@ -105,11 +149,11 @@ export const Route = createFileRoute("/product/$slug")({
       </div>
     </AppShell>
   ),
-  errorComponent: ({ error }) => (
+  errorComponent: ({ error }: { error: any }) => (
     <AppShell>
       <div className="container-app py-16 text-center text-sm text-destructive">
         <h2 className="font-semibold text-lg">Failed to load product page</h2>
-        <p className="mt-2 text-muted-foreground">{error.message}</p>
+        <p className="mt-2 text-muted-foreground">{error?.message || String(error)}</p>
         <Link to="/" className="mt-4 inline-block text-primary underline">Back to feed</Link>
       </div>
     </AppShell>
@@ -305,9 +349,6 @@ function ProductPage() {
       {faqSchema && (
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(faqSchema) }} />
       )}
-      {product.structured_data && (
-        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(product.structured_data) }} />
-      )}
 
       <div className="container-app pt-2 pb-10">
         {/* Breadcrumb Row */}
@@ -364,7 +405,8 @@ function ProductPage() {
         {/* Thumbnail Selector Bar */}
         {galleryImages.length > 1 && (
           <div className="flex gap-2.5 mt-3 overflow-x-auto pb-1 scrollbar-none">
-            {galleryImages.map((imgUrl, i) => (\n              <button
+            {galleryImages.map((imgUrl, i) => (
+              <button
                 key={i}
                 onClick={() => setActiveImgIndex(i)}
                 className={`h-14 w-14 rounded-lg border overflow-hidden shrink-0 transition bg-card ${

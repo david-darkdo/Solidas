@@ -13,7 +13,7 @@ import { getAIProvider, AIProviderError } from "./ai-providers";
  */
 export const generateStandaloneLifestyleImage = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((data: { productId: string }) => {
+  .validator((data: { productId: string }) => {
     if (!data?.productId) throw new Error("productId required");
     return data;
   })
