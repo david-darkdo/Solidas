@@ -122,7 +122,7 @@ export const Route = createFileRoute("/product/$slug")({
       meta: [
         { title: title },
         { name: "description", content: desc },
-        { property: "og:type", content: "product" },
+        { property: "og:type", content: "website" },
         { property: "og:title", content: title },
         { property: "og:description", content: desc },
         { property: "og:image", content: imageUrl ? publicImageUrl(imageUrl) : "" },

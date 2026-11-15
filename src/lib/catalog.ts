@@ -335,7 +335,22 @@ export async function fetchProductBySlug(slug: string) {
     .limit(1)
     .maybeSingle();
   if (error) throw error;
-  return data;
+  if (data) return data;
+
+  // Fallback for legacy draft-img-<uuid>-<4char> or pre-normalized slugs that share the unique 4-character suffix
+  const suffixMatch = normalized.match(/-([a-z0-9]{4})$/);
+  if (suffixMatch) {
+    const suffix = suffixMatch[1];
+    const { data: bySuffix } = await applyPublicFilters(
+      supabase.from("products").select("*"),
+    )
+      .ilike("slug", `%-${suffix}`)
+      .limit(2);
+    if (bySuffix && bySuffix.length === 1) {
+      return bySuffix[0];
+    }
+  }
+  return null;
 }
 
 export async function fetchRelatedProducts(
