@@ -38,9 +38,11 @@ const feedInfiniteQuery = (f: FeedFilters) =>
 export const Route = createFileRoute("/")({
   validateSearch: validateFeedSearch,
   loaderDeps: ({ search }) => search,
-  loader: ({ context, deps }) => {
-    context.queryClient.ensureQueryData(taxonomyQuery);
-    context.queryClient.ensureInfiniteQueryData(feedInfiniteQuery(deps));
+  loader: async ({ context, deps }) => {
+    await Promise.all([
+      context.queryClient.ensureQueryData(taxonomyQuery),
+      context.queryClient.ensureInfiniteQueryData(feedInfiniteQuery(deps)),
+    ]);
   },
   head: () => {
     const origin = getProductionOrigin();

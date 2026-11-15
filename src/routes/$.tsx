@@ -132,10 +132,24 @@ const hierarchyQuery = (splat: string, origin: string) =>
             .from("family_groups")
             .select("id, name, slug, subcategory_id, custom_ai_prompt_override")
             .in("subcategory_id", subIds);
-          const rawFam = (famsForCat ?? []).find(
+          const matchingFams = (famsForCat ?? []).filter(
             (f) => slugify(f.slug) === slug3 || slugify(f.name) === slug3
           );
-          if (!rawFam) throw notFound();
+          if (matchingFams.length === 0) throw notFound();
+
+          let rawFam = matchingFams[0];
+          if (matchingFams.length > 1) {
+            const { data: famProds } = await supabase
+              .from("products")
+              .select("family_id")
+              .in("family_id", matchingFams.map((f) => f.id))
+              .eq("processing_state", "completed")
+              .eq("status", "published")
+              .eq("hidden", false)
+              .is("deleted_at", null);
+            const populatedFamIds = new Set((famProds ?? []).map((p: any) => p.family_id));
+            rawFam = matchingFams.find((f) => populatedFamIds.has(f.id)) || matchingFams[0];
+          }
 
           family = {
             ...rawFam,
