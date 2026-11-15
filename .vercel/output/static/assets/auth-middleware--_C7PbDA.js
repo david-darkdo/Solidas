@@ -1,0 +1,1 @@
+import{et as e}from"./index-BZedORmu.js";var t=e({type:`function`});export{t};

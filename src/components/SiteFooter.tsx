@@ -79,8 +79,8 @@ export function SiteFooter() {
             <li><Link to="/home" className="text-muted-foreground hover:text-[#1E82A6] transition">Video Showcase & Profile</Link></li>
             <li><a href="/tiles" className="text-muted-foreground hover:text-[#1E82A6] transition">All Tiles & Slabs</a></li>
             <li><a href="/tiles/ceramics" className="text-muted-foreground hover:text-[#1E82A6] transition">Ceramics Tiles</a></li>
-            <li><a href="/tiles/granite" className="text-muted-foreground hover:text-[#1E82A6] transition">Granite Tiles</a></li>
-            <li><a href="/tiles/marble" className="text-muted-foreground hover:text-[#1E82A6] transition">Marble Tiles</a></li>
+            <li><a href="/tiles/ceramics/60-60" className="text-muted-foreground hover:text-[#1E82A6] transition">60×60 Ceramic & Porcelain Tiles</a></li>
+            <li><a href="/tiles/ceramics/60-120" className="text-muted-foreground hover:text-[#1E82A6] transition">60×120 Luxury Tile Slabs</a></li>
             <li><a href="/doors" className="text-muted-foreground hover:text-[#1E82A6] transition">Security & Interior Doors</a></li>
             <li><a href="/doors/foreign" className="text-muted-foreground hover:text-[#1E82A6] transition">Foreign Doors</a></li>
             <li><a href="/doors/local" className="text-muted-foreground hover:text-[#1E82A6] transition">Local Doors</a></li>

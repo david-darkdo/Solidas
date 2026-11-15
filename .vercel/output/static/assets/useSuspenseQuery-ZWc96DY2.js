@@ -1,0 +1,1 @@
+import{c as e,o as t,s as n}from"./settings-D0o8hLq5.js";function r(r,i){return t({...r,enabled:!0,suspense:!0,throwOnError:n,placeholderData:void 0},e,i)}export{r as t};

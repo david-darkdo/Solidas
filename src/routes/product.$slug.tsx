@@ -26,11 +26,11 @@ const productQuery = (slug: string) =>
     },
   });
 
-const relatedQuery = (familyId: string | null, excludeId: string) =>
+const relatedQuery = (familyId: string | null, excludeId: string, categoryId?: string | null) =>
   queryOptions({
-    queryKey: ["related", familyId, excludeId],
-    queryFn: () => fetchRelatedProducts(familyId, excludeId),
-    enabled: !!familyId,
+    queryKey: ["related", familyId, excludeId, categoryId],
+    queryFn: () => fetchRelatedProducts(familyId, excludeId, null, categoryId),
+    enabled: Boolean(familyId || categoryId),
   });
 
 export const Route = createFileRoute("/product/$slug")({
@@ -47,7 +47,7 @@ export const Route = createFileRoute("/product/$slug")({
       });
     }
 
-    context.queryClient.ensureQueryData(relatedQuery(product.family_id, product.id));
+    await context.queryClient.ensureQueryData(relatedQuery(product.family_id, product.id, product.category_id));
 
     // Fetch taxonomy parents
     const [typeRes, categoryRes, subcategoryRes, familyRes] = await Promise.all([
@@ -188,7 +188,7 @@ function ProductDetailSkeleton() {
 function ProductPage() {
   const { product, origin, taxonomy } = Route.useLoaderData();
   const { data: related = [] } = useSuspenseQuery(
-    relatedQuery(product.family_id, product.id),
+    relatedQuery(product.family_id, product.id, product.category_id),
   );
 
   const { user } = useAuth();
@@ -235,7 +235,10 @@ function ProductPage() {
       const { data } = await supabase
         .from("products")
         .select("*")
+        .eq("processing_state", "completed")
         .eq("status" as any, "published")
+        .eq("hidden", false)
+        .is("deleted_at", null)
         .neq("id", product.id)
         .limit(4);
       setRecommendations(data || []);
@@ -278,18 +281,29 @@ function ProductPage() {
   };
 
   const canonicalProductUrl = getCanonicalProductUrl(product, origin);
+  const dimension = (product?.size || taxonomy?.subcategory?.name || "")?.trim();
+  const specSummary = [
+    dimension ? `size ${dimension}` : "",
+    product?.material ? `${product.material} material` : "",
+    product?.color ? `${product.color} colour` : "",
+    product?.finish ? `${product.finish} finish` : "",
+  ].filter(Boolean);
+  const differentiatedDescription =
+    product.seo_description ||
+    product.generated_description ||
+    `Buy ${product.name}${product.code ? ` (Code: ${product.code})` : ""}${specSummary.length ? ` featuring ${specSummary.join(", ")}` : ""} from SOLIDAS TILES AND MARBLE NIG. LIMITED in Dei-Dei, Abuja. ${product.short_description || ""}`.trim();
 
   const productSchema = {
     "@context": "https://schema.org",
     "@type": "Product",
-    "name": product.name,
+    "name": product.code ? `${product.name} (${product.code})` : product.name,
     "image": galleryImages.map((img) => ({
       "@type": "ImageObject",
       "url": img,
-      "name": product.alt_text || product.name,
-      "caption": product.seo_description || product.short_description || product.name
+      "name": product.alt_text || `${product.name}${product.code ? ` (${product.code})` : ""}`,
+      "caption": differentiatedDescription
     })),
-    "description": product.seo_description || product.generated_description || product.short_description || "",
+    "description": differentiatedDescription,
     "sku": product.code || product.id,
     "mpn": product.code || product.id,
     "brand": {

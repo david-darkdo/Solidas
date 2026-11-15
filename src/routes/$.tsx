@@ -204,7 +204,7 @@ const hierarchyQuery = (splat: string, origin: string) =>
       // 5. Fetch Products
       let productsQuery = supabase
         .from("products")
-        .select("id, slug, name, code, price, brand, image_url, generated_studio_image, generated_installed_image, short_description, color, material, finish, alt_text")
+        .select("id, slug, name, code, price, brand, image_url, generated_studio_image, generated_installed_image, short_description, color, material, finish, alt_text, type_id, category_id, subcategory_id, family_id")
         .eq("processing_state", "completed")
         .eq("status", "published")
         .eq("hidden", false)
@@ -221,8 +221,12 @@ const hierarchyQuery = (splat: string, origin: string) =>
       }
 
       const { data: products } = await productsQuery.order("created_at", { ascending: false });
+      const activeProducts = products ?? [];
+      const activeCatIds = new Set(activeProducts.map((p: any) => p.category_id).filter(Boolean));
+      const activeSubIds = new Set(activeProducts.map((p: any) => p.subcategory_id).filter(Boolean));
+      const activeFamIds = new Set(activeProducts.map((p: any) => p.family_id).filter(Boolean));
 
-      // 6. Fetch Child taxonomy nodes
+      // 6. Fetch Child taxonomy nodes (filtered to populated nodes with >= 1 published product)
       let childCategories: any[] = [];
       let childSubcategories: any[] = [];
       let childFamilies: any[] = [];
@@ -233,47 +237,57 @@ const hierarchyQuery = (splat: string, origin: string) =>
           .select("id, name, slug")
           .eq("type_id", type.id)
           .order("name");
-        childCategories = (data ?? []).map((c: any) => ({
-          ...c,
-          name: c.name.trim(),
-          slug: normalizeCategorySlug(c.slug || c.name),
-        }));
+        childCategories = (data ?? [])
+          .filter((c: any) => activeCatIds.has(c.id))
+          .map((c: any) => ({
+            ...c,
+            name: c.name.trim(),
+            slug: normalizeCategorySlug(c.slug || c.name),
+          }));
       } else if (!subcategory) {
         const { data: subs } = await supabase
           .from("subcategories")
           .select("id, name, slug")
           .eq("category_id", category.id)
           .order("name");
-        childSubcategories = (subs ?? []).map((s: any) => ({
+        const allMappedSubs = (subs ?? []).map((s: any) => ({
           ...s,
           name: s.name.trim(),
           slug: slugify(s.slug || s.name),
         }));
+        const subSlugById = new Map(allMappedSubs.map((s: any) => [s.id, s.slug]));
+        childSubcategories = allMappedSubs.filter((s: any) => activeSubIds.has(s.id));
 
         const subIds = childSubcategories.map((s: any) => s.id);
         if (subIds.length > 0) {
           const { data: fams } = await supabase
             .from("family_groups")
-            .select("id, name, slug")
+            .select("id, name, slug, subcategory_id")
             .in("subcategory_id", subIds)
             .order("name");
-          childFamilies = (fams ?? []).map((f: any) => ({
-            ...f,
-            name: f.name.trim(),
-            slug: slugify(f.slug || f.name),
-          }));
+          childFamilies = (fams ?? [])
+            .filter((f: any) => activeFamIds.has(f.id) && subSlugById.has(f.subcategory_id))
+            .map((f: any) => ({
+              ...f,
+              name: f.name.trim(),
+              slug: slugify(f.slug || f.name),
+              subcategory_slug: subSlugById.get(f.subcategory_id),
+            }));
         }
       } else if (!family) {
         const { data: fams } = await supabase
           .from("family_groups")
-          .select("id, name, slug")
+          .select("id, name, slug, subcategory_id")
           .eq("subcategory_id", subcategory.id)
           .order("name");
-        childFamilies = (fams ?? []).map((f: any) => ({
-          ...f,
-          name: f.name.trim(),
-          slug: slugify(f.slug || f.name),
-        }));
+        childFamilies = (fams ?? [])
+          .filter((f: any) => activeFamIds.has(f.id))
+          .map((f: any) => ({
+            ...f,
+            name: f.name.trim(),
+            slug: slugify(f.slug || f.name),
+            subcategory_slug: subcategory.slug,
+          }));
       }
 
       return {
@@ -281,7 +295,7 @@ const hierarchyQuery = (splat: string, origin: string) =>
         category,
         subcategory,
         family,
-        products: products ?? [],
+        products: activeProducts,
         childCategories,
         childSubcategories,
         childFamilies,
@@ -325,11 +339,13 @@ export const Route = createFileRoute("/$")({
       (category ? `/${category.slug}` : "") + 
       (subcategory ? `/${subcategory.slug}` : "") + 
       (family ? `/${family.slug}` : "");
+    const isEmptyTaxonomy = !loaderData.products || loaderData.products.length === 0;
 
     return {
       meta: [
         { title },
         { name: "description", content: description },
+        ...(isEmptyTaxonomy ? [{ name: "robots", content: "noindex, follow" }] : []),
         { property: "og:type", content: "website" },
         { property: "og:title", content: title },
         { property: "og:description", content: description },
@@ -340,7 +356,7 @@ export const Route = createFileRoute("/$")({
         { name: "twitter:description", content: description },
         { name: "twitter:image", content: metaImageUrl },
       ],
-      links: [
+      links: isEmptyTaxonomy ? [] : [
         { rel: "canonical", href: canonical },
       ],
     };
@@ -453,8 +469,9 @@ function HierarchyLandingPage() {
                 </Link>
               ))}
               {childFamilies.map((f) => {
-                const parentPath = subcategory
-                  ? `/${type.slug}/${category.slug}/${subcategory.slug}`
+                const subSlug = subcategory?.slug || f.subcategory_slug;
+                const parentPath = subSlug
+                  ? `/${type.slug}/${category.slug}/${subSlug}`
                   : `/${type.slug}/${category.slug}`;
                 return (
                   <Link

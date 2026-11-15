@@ -74,24 +74,20 @@ export const Route = createFileRoute("/sitemap-images.xml")({
           if (imgSet.size === 0) continue;
           seenLocs.add(loc);
 
-          const imgTitle = escapeXml(
-            (p as any).image_title || `${p.name}${p.code ? ` (${p.code})` : ""} | SOLIDAS`
-          );
-          const imgCaption = escapeXml(
-            (p as any).image_caption ||
-              (p as any).alt_text ||
-              p.short_description ||
-              `${p.name} supplied by SOLIDAS TILES AND MARBLE NIG. LIMITED in Abuja.`
-          );
+          const rawTitle = ((p as any).image_title || p.name || "").trim();
+          const rawCaption = ((p as any).image_caption || (p as any).alt_text || p.short_description || "").trim();
 
           const imageNodes = Array.from(imgSet)
-            .map(
-              (imgUrl) => `    <image:image>
-      <image:loc>${escapeXml(imgUrl)}</image:loc>
-      <image:title>${imgTitle}</image:title>
-      <image:caption>${imgCaption}</image:caption>
-    </image:image>`
-            )
+            .map((imgUrl) => {
+              const metaLines = [`      <image:loc>${escapeXml(imgUrl)}</image:loc>`];
+              if (rawTitle) {
+                metaLines.push(`      <image:title>${escapeXml(rawTitle)}</image:title>`);
+              }
+              if (rawCaption) {
+                metaLines.push(`      <image:caption>${escapeXml(rawCaption)}</image:caption>`);
+              }
+              return `    <image:image>\n${metaLines.join("\n")}\n    </image:image>`;
+            })
             .join("\n");
 
           urls.push(`  <url>

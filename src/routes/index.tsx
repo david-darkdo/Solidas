@@ -84,11 +84,11 @@ function FeedPage() {
 
   const activeType = tax.types.find((t: any) => t.slug === search.type);
   const categoriesForType = activeType
-    ? tax.categories.filter((c: any) => c.type_id === activeType.id)
+    ? tax.categories.filter((c: any) => c.type_id === activeType.id && (c.product_count ?? 1) > 0)
     : [];
   const activeCategory = categoriesForType.find((c: any) => c.slug === search.category);
   const subcategoriesForCat = activeCategory
-    ? tax.subcategories.filter((s: any) => s.category_id === activeCategory.id)
+    ? tax.subcategories.filter((s: any) => s.category_id === activeCategory.id && (s.product_count ?? 1) > 0)
     : [];
   const activeSub = subcategoriesForCat.find((s: any) => s.slug === search.subcategory);
 
@@ -259,47 +259,51 @@ function FeedPage() {
             </p>
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
-            {tax.types.map((t: any) => {
-              const cats = tax.categories.filter((c: any) => c.type_id === t.id);
-              return (
-                <div key={t.id} className="rounded-lg border border-border/70 bg-surface-2 p-3.5 space-y-2.5">
-                  <a
-                    href={`/${t.slug}`}
-                    className="font-display text-sm font-bold text-foreground hover:text-[#1E82A6] transition inline-block"
-                  >
-                    {t.name} Catalog →
-                  </a>
-                  <div className="space-y-2">
-                    {cats.map((c: any) => {
-                      const subs = tax.subcategories.filter((s: any) => s.category_id === c.id);
-                      return (
-                        <div key={c.id} className="text-xs">
-                          <a
-                            href={`/${t.slug}/${c.slug}`}
-                            className="font-semibold text-[#1E82A6] hover:underline"
-                          >
-                            {c.name}
-                          </a>
-                          {subs.length > 0 && (
-                            <div className="mt-1 flex flex-wrap gap-1.5">
-                              {subs.map((s: any) => (
-                                <a
-                                  key={s.id}
-                                  href={`/${t.slug}/${c.slug}/${s.slug}`}
-                                  className="rounded border border-border bg-white px-2 py-0.5 text-[11px] text-muted-foreground hover:border-[#1E82A6] hover:text-[#1E82A6] transition"
-                                >
-                                  {s.name}
-                                </a>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
+            {tax.types
+              .filter((t: any) => (t.product_count ?? 1) > 0)
+              .map((t: any) => {
+                const cats = tax.categories.filter((c: any) => c.type_id === t.id && (c.product_count ?? 1) > 0);
+                return (
+                  <div key={t.id} className="rounded-lg border border-border/70 bg-surface-2 p-3.5 space-y-2.5">
+                    <a
+                      href={`/${t.slug}`}
+                      className="font-display text-sm font-bold text-foreground hover:text-[#1E82A6] transition inline-block"
+                    >
+                      {t.name} Catalog →
+                    </a>
+                    <div className="space-y-2">
+                      {cats.map((c: any) => {
+                        const subs = tax.subcategories.filter(
+                          (s: any) => s.category_id === c.id && (s.product_count ?? 1) > 0
+                        );
+                        return (
+                          <div key={c.id} className="text-xs">
+                            <a
+                              href={`/${t.slug}/${c.slug}`}
+                              className="font-semibold text-[#1E82A6] hover:underline"
+                            >
+                              {c.name}
+                            </a>
+                            {subs.length > 0 && (
+                              <div className="mt-1 flex flex-wrap gap-1.5">
+                                {subs.map((s: any) => (
+                                  <a
+                                    key={s.id}
+                                    href={`/${t.slug}/${c.slug}/${s.slug}`}
+                                    className="rounded border border-border bg-white px-2 py-0.5 text-[11px] text-muted-foreground hover:border-[#1E82A6] hover:text-[#1E82A6] transition"
+                                  >
+                                    {s.name}
+                                  </a>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })}
           </div>
         </section>
       </div>

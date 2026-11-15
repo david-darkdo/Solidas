@@ -12,12 +12,14 @@ function escapeXml(unsafe: string): string {
     .replace(/'/g, "&apos;");
 }
 
-function formatDate(dateStr?: string | null): string {
-  if (!dateStr) return new Date().toISOString().split("T")[0];
+function formatDate(dateStr?: string | null, fallback = "2026-11-05"): string {
+  if (!dateStr) return fallback;
   try {
-    return new Date(dateStr).toISOString().split("T")[0];
+    const d = new Date(dateStr);
+    if (Number.isNaN(d.getTime())) return fallback;
+    return d.toISOString().split("T")[0];
   } catch {
-    return new Date().toISOString().split("T")[0];
+    return fallback;
   }
 }
 

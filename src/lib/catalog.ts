@@ -26,7 +26,7 @@ export type ProductRow = {
   distribution_rank?: number;
 };
 
-export type TaxonomyNode = { id: string; name: string; slug: string };
+export type TaxonomyNode = { id: string; name: string; slug: string; product_count?: number };
 
 const PRODUCT_FIELDS =
   "id,slug,name,code,price,brand,image_url,generated_studio_image,generated_installed_image,short_description,family_id,type_id,category_id,subcategory_id,color,material,finish,app_keywords,featured_feed,featured_homepage,created_at";
@@ -41,18 +41,44 @@ function applyPublicFilters<T extends { eq: Function; is: Function }>(q: T): T {
 }
 
 export async function fetchTaxonomy() {
-  const [types, categories, subcategories] = await Promise.all([
+  const [types, categories, subcategories, pubProducts] = await Promise.all([
     supabase.from("product_types").select("id,name,slug").order("name"),
     supabase.from("categories").select("id,name,slug,type_id").order("name"),
     supabase.from("subcategories").select("id,name,slug,category_id").order("name"),
+    applyPublicFilters(supabase.from("products").select("type_id,category_id,subcategory_id")),
   ]);
   if (types.error) throw types.error;
   if (categories.error) throw categories.error;
   if (subcategories.error) throw subcategories.error;
+
+  const typeCounts = new Map<string, number>();
+  const catCounts = new Map<string, number>();
+  const subCounts = new Map<string, number>();
+  for (const p of (pubProducts.data ?? []) as any[]) {
+    if (p.type_id) typeCounts.set(p.type_id, (typeCounts.get(p.type_id) || 0) + 1);
+    if (p.category_id) catCounts.set(p.category_id, (catCounts.get(p.category_id) || 0) + 1);
+    if (p.subcategory_id) subCounts.set(p.subcategory_id, (subCounts.get(p.subcategory_id) || 0) + 1);
+  }
+
   return {
-    types: (types.data ?? []).map((t) => ({ ...t, name: t.name.trim(), slug: slugify(t.slug) })),
-    categories: (categories.data ?? []).map((c) => ({ ...c, name: c.name.trim(), slug: normalizeCategorySlug(c.slug) })),
-    subcategories: (subcategories.data ?? []).map((s) => ({ ...s, name: s.name.trim(), slug: slugify(s.slug) })),
+    types: (types.data ?? []).map((t) => ({
+      ...t,
+      name: t.name.trim(),
+      slug: slugify(t.slug),
+      product_count: typeCounts.get(t.id) || 0,
+    })),
+    categories: (categories.data ?? []).map((c) => ({
+      ...c,
+      name: c.name.trim(),
+      slug: normalizeCategorySlug(c.slug),
+      product_count: catCounts.get(c.id) || 0,
+    })),
+    subcategories: (subcategories.data ?? []).map((s) => ({
+      ...s,
+      name: s.name.trim(),
+      slug: slugify(s.slug),
+      product_count: subCounts.get(s.id) || 0,
+    })),
   };
 }
 
@@ -316,6 +342,7 @@ export async function fetchRelatedProducts(
   familyId: string | null,
   excludeId: string,
   similarIds?: string[] | null,
+  categoryId?: string | null,
 ) {
   if (similarIds && similarIds.length) {
     const { data, error } = await applyPublicFilters(
@@ -327,13 +354,26 @@ export async function fetchRelatedProducts(
     if (error) throw error;
     if ((data ?? []).length) return data as ProductRow[];
   }
-  if (!familyId) return [];
-  const { data, error } = await applyPublicFilters(
-    supabase.from("products").select(PRODUCT_FIELDS),
-  )
-    .eq("family_id", familyId)
-    .neq("id", excludeId)
-    .limit(8);
-  if (error) throw error;
-  return (data ?? []) as ProductRow[];
+  if (familyId) {
+    const { data, error } = await applyPublicFilters(
+      supabase.from("products").select(PRODUCT_FIELDS),
+    )
+      .eq("family_id", familyId)
+      .neq("id", excludeId)
+      .limit(8);
+    if (error) throw error;
+    if ((data ?? []).length) return data as ProductRow[];
+  }
+  if (categoryId) {
+    const { data, error } = await applyPublicFilters(
+      supabase.from("products").select(PRODUCT_FIELDS),
+    )
+      .eq("category_id", categoryId)
+      .neq("id", excludeId)
+      .order("created_at", { ascending: false })
+      .limit(4);
+    if (error) throw error;
+    return (data ?? []) as ProductRow[];
+  }
+  return [];
 }

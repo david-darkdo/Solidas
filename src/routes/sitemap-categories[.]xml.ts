@@ -12,12 +12,14 @@ function escapeXml(unsafe: string): string {
     .replace(/'/g, "&apos;");
 }
 
-function formatDate(dateStr?: string | null): string {
-  if (!dateStr) return new Date().toISOString().split("T")[0];
+function formatDate(dateStr?: string | null, fallback = "2026-11-05"): string {
+  if (!dateStr) return fallback;
   try {
-    return new Date(dateStr).toISOString().split("T")[0];
+    const d = new Date(dateStr);
+    if (Number.isNaN(d.getTime())) return fallback;
+    return d.toISOString().split("T")[0];
   } catch {
-    return new Date().toISOString().split("T")[0];
+    return fallback;
   }
 }
 
@@ -27,17 +29,24 @@ export const Route = createFileRoute("/sitemap-categories.xml")({
       GET: async () => {
         const origin = getProductionOrigin();
 
-        const [typesRes, catsRes, subsRes, famsRes] = await Promise.all([
+        const [typesRes, catsRes, subsRes, famsRes, prodsRes] = await Promise.all([
           supabase.from("product_types").select("id, name, slug, created_at, is_archived"),
           supabase.from("categories").select("id, name, slug, type_id, created_at, is_archived"),
           supabase.from("subcategories").select("id, name, slug, category_id, created_at, is_archived"),
           supabase.from("family_groups").select("id, name, slug, subcategory_id, created_at, is_archived"),
+          supabase
+            .from("products")
+            .select("id, type_id, category_id, subcategory_id, family_id, updated_at, created_at")
+            .eq("processing_state", "completed")
+            .eq("status", "published")
+            .eq("hidden", false)
+            .is("deleted_at", null),
         ]);
 
-        if (typesRes.error || catsRes.error || subsRes.error || famsRes.error) {
+        if (typesRes.error || catsRes.error || subsRes.error || famsRes.error || prodsRes.error) {
           console.error(
             "[sitemap-categories.xml] Database query failed:",
-            typesRes.error || catsRes.error || subsRes.error || famsRes.error
+            typesRes.error || catsRes.error || subsRes.error || famsRes.error || prodsRes.error
           );
           return new Response("Error generating category sitemap", { status: 500 });
         }
@@ -46,6 +55,33 @@ export const Route = createFileRoute("/sitemap-categories.xml")({
         const categories = (catsRes.data || []).filter((c: any) => !c.is_archived);
         const subcategories = (subsRes.data || []).filter((s: any) => !s.is_archived);
         const families = (famsRes.data || []).filter((f: any) => !f.is_archived);
+        const products = prodsRes.data || [];
+
+        const typeStats = new Map<string, { count: number; lastmod: string }>();
+        const catStats = new Map<string, { count: number; lastmod: string }>();
+        const subStats = new Map<string, { count: number; lastmod: string }>();
+        const famStats = new Map<string, { count: number; lastmod: string }>();
+
+        const recordStat = (map: Map<string, { count: number; lastmod: string }>, id: string | null, ts: string) => {
+          if (!id) return;
+          const prev = map.get(id);
+          if (!prev) {
+            map.set(id, { count: 1, lastmod: ts });
+          } else {
+            map.set(id, {
+              count: prev.count + 1,
+              lastmod: ts > prev.lastmod ? ts : prev.lastmod,
+            });
+          }
+        };
+
+        for (const p of products) {
+          const ts = formatDate(p.updated_at || p.created_at);
+          recordStat(typeStats, p.type_id, ts);
+          recordStat(catStats, p.category_id, ts);
+          recordStat(subStats, p.subcategory_id, ts);
+          recordStat(famStats, p.family_id, ts);
+        }
 
         const typeMap = new Map(types.map((t: any) => [t.id, t]));
         const catMap = new Map(categories.map((c: any) => [c.id, c]));
@@ -65,35 +101,43 @@ export const Route = createFileRoute("/sitemap-categories.xml")({
   </url>`);
         };
 
-        // 1. Product Types
+        // 1. Product Types (only populated types with >= 1 published product)
         for (const t of types) {
+          const stat = typeStats.get(t.id);
+          if (!stat || stat.count === 0) continue;
           const tSlug = slugify(t.slug || t.name);
           if (!tSlug) continue;
-          addUrl(`${origin}/${tSlug}`, formatDate(t.created_at), "weekly", "0.9");
+          addUrl(`${origin}/${tSlug}`, stat.lastmod || formatDate(t.created_at), "weekly", "0.9");
         }
 
-        // 2. Categories
+        // 2. Categories (only populated categories with >= 1 published product)
         for (const c of categories) {
+          const stat = catStats.get(c.id);
+          if (!stat || stat.count === 0) continue;
           const parentType = typeMap.get(c.type_id);
           const tSlug = slugify(parentType?.slug || parentType?.name);
           const cSlug = normalizeCategorySlug(c.slug || c.name);
           if (!tSlug || !cSlug) continue;
-          addUrl(`${origin}/${tSlug}/${cSlug}`, formatDate(c.created_at), "weekly", "0.8");
+          addUrl(`${origin}/${tSlug}/${cSlug}`, stat.lastmod || formatDate(c.created_at), "weekly", "0.8");
         }
 
-        // 3. Subcategories
+        // 3. Subcategories (only populated subcategories with >= 1 published product)
         for (const s of subcategories) {
+          const stat = subStats.get(s.id);
+          if (!stat || stat.count === 0) continue;
           const parentCat = catMap.get(s.category_id);
           const parentType = parentCat ? typeMap.get(parentCat.type_id) : null;
           const tSlug = slugify(parentType?.slug || parentType?.name);
           const cSlug = normalizeCategorySlug(parentCat?.slug || parentCat?.name);
           const sSlug = slugify(s.slug || s.name);
           if (!tSlug || !cSlug || !sSlug) continue;
-          addUrl(`${origin}/${tSlug}/${cSlug}/${sSlug}`, formatDate(s.created_at), "weekly", "0.8");
+          addUrl(`${origin}/${tSlug}/${cSlug}/${sSlug}`, stat.lastmod || formatDate(s.created_at), "weekly", "0.8");
         }
 
-        // 4. Family Groups (only when full parent hierarchy resolves cleanly)
+        // 4. Family Groups (only populated family groups with >= 1 published product and valid parent hierarchy)
         for (const f of families) {
+          const stat = famStats.get(f.id);
+          if (!stat || stat.count === 0) continue;
           const fSlug = slugify(f.slug || f.name);
           if (!fSlug || !f.subcategory_id) continue;
 
@@ -106,7 +150,7 @@ export const Route = createFileRoute("/sitemap-categories.xml")({
           if (tSlug && cSlug && sSlug) {
             addUrl(
               `${origin}/${tSlug}/${cSlug}/${sSlug}/${fSlug}`,
-              formatDate(f.created_at),
+              stat.lastmod || formatDate(f.created_at),
               "weekly",
               "0.7"
             );

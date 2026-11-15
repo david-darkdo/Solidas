@@ -1,0 +1,1 @@
+import{t as e}from"./jsx-runtime-BZi9cxqW.js";var t=e(),n=({error:e})=>(0,t.jsx)(`div`,{className:`p-6 text-sm text-[#C0262D] font-mono`,children:(0,t.jsxs)(`div`,{children:[`Error: `,e?.message||String(e)]})});export{n as errorComponent};
