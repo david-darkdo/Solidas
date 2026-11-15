@@ -1,1 +1,0 @@
-import{n as e,t}from"./createServerFn-FIfaT_eM.js";import{t as n}from"./auth-middleware--_C7PbDA.js";var r=t({method:`POST`}).middleware([n]).handler(e(`8af549a2ded5098074f4959031ddb6299002be7ec955a7111dc583121be4dc35`)),i=t({method:`POST`}).middleware([n]).handler(e(`6b15e25ce512c1d1a591fc613bdae7f9288d09e9ac07eb820ac3c45327de1136`));export{r as n,i as t};
