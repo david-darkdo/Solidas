@@ -18,9 +18,9 @@ export const deleteCloudinaryImage = createServerFn({ method: "POST" })
     return data;
   })
   .handler(async ({ data }) => {
-    const cloudName = process.env.CLOUDINARY_CLOUD_NAME || process.env.VITE_CLOUDINARY_CLOUD_NAME;
-    const apiKey = process.env.CLOUDINARY_API_KEY;
-    const apiSecret = process.env.CLOUDINARY_API_SECRET;
+    const { getServerCloudinaryConfig, createCloudinarySignature } =
+      await import("./cloudinary.server");
+    const { cloudName, apiKey, apiSecret } = getServerCloudinaryConfig();
 
     if (!cloudName || !apiKey || !apiSecret) {
       console.error("[Cloudinary] Missing environment variables for deletion");
@@ -34,14 +34,11 @@ export const deleteCloudinaryImage = createServerFn({ method: "POST" })
 
     console.log(`[Cloudinary] Deleting asset ${publicId} from cloud ${cloudName}...`);
 
-    // Dynamically require crypto to avoid shipping client-side
-    const crypto = await import("crypto");
     const timestamp = Math.round(Date.now() / 1000);
-    const paramString = `public_id=${publicId}&timestamp=${timestamp}`;
-    const signature = crypto
-      .createHash("sha1")
-      .update(paramString + apiSecret)
-      .digest("hex");
+    const signature = await createCloudinarySignature(
+      { public_id: publicId, timestamp },
+      apiSecret,
+    );
 
     const formData = new URLSearchParams();
     formData.append("public_id", publicId);

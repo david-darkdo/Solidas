@@ -3,7 +3,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
 import { publicImageUrl } from "@/components/ImageUploader";
-import { getCloudinarySignatureServer, uploadLargeMediaFileClient } from "@/lib/upload-server";
+import { getCloudinarySignatureServer } from "@/lib/upload-server";
+import { uploadLargeMediaFileClient } from "@/lib/upload-client";
 import { useAuth } from "@/hooks/use-auth";
 import { toast } from "sonner";
 import {
@@ -25,7 +26,7 @@ import {
   Award,
   Shield,
   HelpCircle,
-  FileCheck
+  FileCheck,
 } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/admin/business")({
@@ -91,7 +92,9 @@ function BusinessOpsPage() {
   const [activeTab, setActiveTab] = useState<BusinessTab>("pipeline");
   const [inquiries, setInquiries] = useState<Inquiry[]>([]);
   const [collections, setCollections] = useState<CollectionRow[]>([]);
-  const [profilesById, setProfilesById] = useState<Record<string, { email: string | null; full_name: string | null }>>({});
+  const [profilesById, setProfilesById] = useState<
+    Record<string, { email: string | null; full_name: string | null }>
+  >({});
   const [selected, setSelected] = useState<Inquiry | null>(null);
   const [loaded, setLoaded] = useState(false);
 
@@ -100,7 +103,11 @@ function BusinessOpsPage() {
   const [newVideoUrl, setNewVideoUrl] = useState("");
   const [trusts, setTrusts] = useState<TrustFeature[]>([]);
   const [editingTrust, setEditingTrust] = useState<TrustFeature | null>(null);
-  const [newTrust, setNewTrust] = useState<{ icon_name: string; title: string; description: string }>({
+  const [newTrust, setNewTrust] = useState<{
+    icon_name: string;
+    title: string;
+    description: string;
+  }>({
     icon_name: "Shield",
     title: "",
     description: "",
@@ -116,12 +123,16 @@ function BusinessOpsPage() {
   const logAuditAction = async (action: string, details: any) => {
     try {
       const { data: me } = await supabase.auth.getUser();
-      const { data: profile } = await supabase.from("profiles").select("id").eq("auth_id", me.user?.id ?? "").maybeSingle();
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("id")
+        .eq("auth_id", me.user?.id ?? "")
+        .maybeSingle();
       if (profile?.id) {
         await supabase.from("experience_audit_logs").insert({
           user_id: profile.id,
           action,
-          details
+          details,
         });
       }
     } catch (err: any) {
@@ -138,15 +149,24 @@ function BusinessOpsPage() {
         { data: profs },
         { data: vids },
         { data: trs },
-        { data: scVids }
+        { data: scVids },
       ] = await Promise.all([
         supabase.from("whatsapp_inquiries").select("*").order("created_at", { ascending: false }),
         supabase.from("collections").select("*").order("created_at", { ascending: false }),
         supabase.from("collection_items").select("collection_id"),
         supabase.from("profiles").select("auth_id, email, full_name"),
-        supabase.from("hero_videos" as any).select("*").order("order_index", { ascending: true }),
-        supabase.from("trust_features" as any).select("*").order("order_index", { ascending: true }),
-        supabase.from("showcase_videos" as any).select("*").order("order_index", { ascending: true })
+        supabase
+          .from("hero_videos" as any)
+          .select("*")
+          .order("order_index", { ascending: true }),
+        supabase
+          .from("trust_features" as any)
+          .select("*")
+          .order("order_index", { ascending: true }),
+        supabase
+          .from("showcase_videos" as any)
+          .select("*")
+          .order("order_index", { ascending: true }),
       ]);
 
       const counts = new Map<string, number>();
@@ -154,19 +174,25 @@ function BusinessOpsPage() {
         counts.set(r.collection_id, (counts.get(r.collection_id) ?? 0) + 1);
       }
       const pmap: Record<string, { email: string | null; full_name: string | null }> = {};
-      for (const p of (profs ?? []) as Array<{ auth_id: string; email: string | null; full_name: string | null }>) {
+      for (const p of (profs ?? []) as Array<{
+        auth_id: string;
+        email: string | null;
+        full_name: string | null;
+      }>) {
         pmap[p.auth_id] = { email: p.email, full_name: p.full_name };
       }
       setProfilesById(pmap);
 
       setInquiries((inq ?? []) as Inquiry[]);
       setCollections(
-        ((cols ?? []) as Array<Omit<CollectionRow, "item_count" | "user_email" | "user_name">>).map((c) => ({
-          ...c,
-          item_count: counts.get(c.id) ?? 0,
-          user_email: pmap[c.user_id]?.email ?? null,
-          user_name: pmap[c.user_id]?.full_name ?? null,
-        }))
+        ((cols ?? []) as Array<Omit<CollectionRow, "item_count" | "user_email" | "user_name">>).map(
+          (c) => ({
+            ...c,
+            item_count: counts.get(c.id) ?? 0,
+            user_email: pmap[c.user_id]?.email ?? null,
+            user_name: pmap[c.user_id]?.full_name ?? null,
+          }),
+        ),
       );
       setVideos((vids ?? []) as any);
       setTrusts((trs ?? []) as any);
@@ -201,10 +227,16 @@ function BusinessOpsPage() {
       .eq("id", id);
     if (error) return toast.error(error.message);
     setInquiries((rows) =>
-      rows.map((r) => (r.id === id ? { ...r, inquiry_status: status, last_contacted_at: new Date().toISOString() } : r))
+      rows.map((r) =>
+        r.id === id
+          ? { ...r, inquiry_status: status, last_contacted_at: new Date().toISOString() }
+          : r,
+      ),
     );
     if (selected?.id === id) {
-      setSelected((s) => (s ? { ...s, inquiry_status: status, last_contacted_at: new Date().toISOString() } : s));
+      setSelected((s) =>
+        s ? { ...s, inquiry_status: status, last_contacted_at: new Date().toISOString() } : s,
+      );
     }
     await logAuditAction("update_inquiry_status", { id, status });
     toast.success(`Status → ${status}`);
@@ -223,7 +255,10 @@ function BusinessOpsPage() {
   const updateCollectionStatus = async (id: string, status: Status) => {
     const patch: Record<string, unknown> = { inquiry_status: status };
     if (status === "CLOSED") patch.closed_at = new Date().toISOString();
-    const { error } = await supabase.from("collections").update(patch as never).eq("id", id);
+    const { error } = await supabase
+      .from("collections")
+      .update(patch as never)
+      .eq("id", id);
     if (error) return toast.error(error.message);
     setCollections((rows) => rows.map((r) => (r.id === id ? { ...r, inquiry_status: status } : r)));
     await logAuditAction("update_collection_status", { id, status });
@@ -249,7 +284,7 @@ function BusinessOpsPage() {
       const { error } = await supabase.from("hero_videos" as any).insert({
         url: newVideoUrl.trim(),
         order_index: nextIndex,
-        is_active: true
+        is_active: true,
       });
       if (error) throw error;
       setNewVideoUrl("");
@@ -264,9 +299,17 @@ function BusinessOpsPage() {
   };
 
   const deleteHeroVideo = async (id: string) => {
-    if (!confirm("Delete this background video? This will instantly remove it from the homepage slider.")) return;
+    if (
+      !confirm(
+        "Delete this background video? This will instantly remove it from the homepage slider.",
+      )
+    )
+      return;
     try {
-      const { error } = await supabase.from("hero_videos" as any).delete().eq("id", id);
+      const { error } = await supabase
+        .from("hero_videos" as any)
+        .delete()
+        .eq("id", id);
       if (error) throw error;
       toast.success("Background video deleted");
       await logAuditAction("delete_hero_video", { id });
@@ -278,7 +321,10 @@ function BusinessOpsPage() {
 
   const toggleHeroVideo = async (id: string, current: boolean) => {
     try {
-      const { error } = await supabase.from("hero_videos" as any).update({ is_active: !current }).eq("id", id);
+      const { error } = await supabase
+        .from("hero_videos" as any)
+        .update({ is_active: !current })
+        .eq("id", id);
       if (error) throw error;
       toast.success("Video status updated");
       await logAuditAction("toggle_hero_video", { id, is_active: !current });
@@ -289,7 +335,7 @@ function BusinessOpsPage() {
   };
 
   const reorderVideo = async (video: HeroVideo, direction: "up" | "down") => {
-    const idx = videos.findIndex(v => v.id === video.id);
+    const idx = videos.findIndex((v) => v.id === video.id);
     if (direction === "up" && idx === 0) return;
     if (direction === "down" && idx === videos.length - 1) return;
 
@@ -298,8 +344,14 @@ function BusinessOpsPage() {
 
     try {
       await Promise.all([
-        supabase.from("hero_videos" as any).update({ order_index: target.order_index }).eq("id", video.id),
-        supabase.from("hero_videos" as any).update({ order_index: video.order_index }).eq("id", target.id)
+        supabase
+          .from("hero_videos" as any)
+          .update({ order_index: target.order_index })
+          .eq("id", video.id),
+        supabase
+          .from("hero_videos" as any)
+          .update({ order_index: video.order_index })
+          .eq("id", target.id),
       ]);
       toast.success("Reordered successfully");
       loadAll();
@@ -310,7 +362,8 @@ function BusinessOpsPage() {
 
   // EXPERIENCE MANAGER — TRUST STRIP
   const addTrustFeature = async () => {
-    if (!newTrust.title.trim() || !newTrust.description.trim()) return toast.error("Provide a title and description");
+    if (!newTrust.title.trim() || !newTrust.description.trim())
+      return toast.error("Provide a title and description");
     setBusy(true);
     try {
       const nextIndex = trusts.length;
@@ -318,12 +371,15 @@ function BusinessOpsPage() {
         icon_name: newTrust.icon_name,
         title: newTrust.title.trim(),
         description: newTrust.description.trim(),
-        order_index: nextIndex
+        order_index: nextIndex,
       });
       if (error) throw error;
       setNewTrust({ icon_name: "Shield", title: "", description: "" });
       toast.success("Trust feature added");
-      await logAuditAction("add_trust_feature", { title: newTrust.title.trim(), icon: newTrust.icon_name });
+      await logAuditAction("add_trust_feature", {
+        title: newTrust.title.trim(),
+        icon: newTrust.icon_name,
+      });
       loadAll();
     } catch (err: any) {
       toast.error(err.message);
@@ -333,9 +389,13 @@ function BusinessOpsPage() {
   };
 
   const deleteTrustFeature = async (id: string) => {
-    if (!confirm("Delete this trust feature? This changes the bottom trust strip storefront-wide.")) return;
+    if (!confirm("Delete this trust feature? This changes the bottom trust strip storefront-wide."))
+      return;
     try {
-      const { error } = await supabase.from("trust_features" as any).delete().eq("id", id);
+      const { error } = await supabase
+        .from("trust_features" as any)
+        .delete()
+        .eq("id", id);
       if (error) throw error;
       toast.success("Trust feature deleted");
       await logAuditAction("delete_trust_feature", { id });
@@ -348,14 +408,20 @@ function BusinessOpsPage() {
   const updateTrustFeature = async () => {
     if (!editingTrust) return;
     try {
-      const { error } = await supabase.from("trust_features" as any).update({
-        icon_name: editingTrust.icon_name,
-        title: editingTrust.title,
-        description: editingTrust.description
-      }).eq("id", editingTrust.id);
+      const { error } = await supabase
+        .from("trust_features" as any)
+        .update({
+          icon_name: editingTrust.icon_name,
+          title: editingTrust.title,
+          description: editingTrust.description,
+        })
+        .eq("id", editingTrust.id);
       if (error) throw error;
       toast.success("Trust feature updated");
-      await logAuditAction("update_trust_feature", { id: editingTrust.id, title: editingTrust.title });
+      await logAuditAction("update_trust_feature", {
+        id: editingTrust.id,
+        title: editingTrust.title,
+      });
       setEditingTrust(null);
       loadAll();
     } catch (err: any) {
@@ -364,7 +430,7 @@ function BusinessOpsPage() {
   };
 
   const reorderTrust = async (trust: TrustFeature, direction: "up" | "down") => {
-    const idx = trusts.findIndex(t => t.id === trust.id);
+    const idx = trusts.findIndex((t) => t.id === trust.id);
     if (direction === "up" && idx === 0) return;
     if (direction === "down" && idx === trusts.length - 1) return;
 
@@ -373,8 +439,14 @@ function BusinessOpsPage() {
 
     try {
       await Promise.all([
-        supabase.from("trust_features" as any).update({ order_index: target.order_index }).eq("id", trust.id),
-        supabase.from("trust_features" as any).update({ order_index: trust.order_index }).eq("id", target.id)
+        supabase
+          .from("trust_features" as any)
+          .update({ order_index: target.order_index })
+          .eq("id", trust.id),
+        supabase
+          .from("trust_features" as any)
+          .update({ order_index: trust.order_index })
+          .eq("id", target.id),
       ]);
       toast.success("Reordered trust strip features");
       loadAll();
@@ -393,13 +465,16 @@ function BusinessOpsPage() {
         url: newShowcaseUrl.trim(),
         title: newShowcaseTitle.trim() || null,
         order_index: nextIndex,
-        is_active: true
+        is_active: true,
       });
       if (error) throw error;
       setNewShowcaseUrl("");
       setNewShowcaseTitle("");
       toast.success("Showcase video added successfully!");
-      await logAuditAction("add_showcase_video", { url: newShowcaseUrl.trim(), order_index: nextIndex });
+      await logAuditAction("add_showcase_video", {
+        url: newShowcaseUrl.trim(),
+        order_index: nextIndex,
+      });
       loadAll();
     } catch (err: any) {
       toast.error(err.message);
@@ -409,9 +484,17 @@ function BusinessOpsPage() {
   };
 
   const deleteShowcaseVideo = async (id: string) => {
-    if (!confirm("Delete this showcase video? This will remove it from the homepage continuous slider.")) return;
+    if (
+      !confirm(
+        "Delete this showcase video? This will remove it from the homepage continuous slider.",
+      )
+    )
+      return;
     try {
-      const { error } = await supabase.from("showcase_videos" as any).delete().eq("id", id);
+      const { error } = await supabase
+        .from("showcase_videos" as any)
+        .delete()
+        .eq("id", id);
       if (error) throw error;
       toast.success("Showcase video removed");
       await logAuditAction("delete_showcase_video", { id });
@@ -423,7 +506,10 @@ function BusinessOpsPage() {
 
   const toggleShowcaseVideo = async (id: string, current: boolean) => {
     try {
-      const { error } = await supabase.from("showcase_videos" as any).update({ is_active: !current }).eq("id", id);
+      const { error } = await supabase
+        .from("showcase_videos" as any)
+        .update({ is_active: !current })
+        .eq("id", id);
       if (error) throw error;
       toast.success("Showcase video status updated");
       await logAuditAction("toggle_showcase_video", { id, is_active: !current });
@@ -434,7 +520,7 @@ function BusinessOpsPage() {
   };
 
   const reorderShowcaseVideo = async (video: any, direction: "up" | "down") => {
-    const idx = showcaseVideos.findIndex(v => v.id === video.id);
+    const idx = showcaseVideos.findIndex((v) => v.id === video.id);
     if (direction === "up" && idx === 0) return;
     if (direction === "down" && idx === showcaseVideos.length - 1) return;
 
@@ -443,8 +529,14 @@ function BusinessOpsPage() {
 
     try {
       await Promise.all([
-        supabase.from("showcase_videos" as any).update({ order_index: target.order_index }).eq("id", video.id),
-        supabase.from("showcase_videos" as any).update({ order_index: video.order_index }).eq("id", target.id)
+        supabase
+          .from("showcase_videos" as any)
+          .update({ order_index: target.order_index })
+          .eq("id", video.id),
+        supabase
+          .from("showcase_videos" as any)
+          .update({ order_index: video.order_index })
+          .eq("id", target.id),
       ]);
       toast.success("Reordered showcase videos");
       loadAll();
@@ -454,7 +546,11 @@ function BusinessOpsPage() {
   };
 
   if (loading || !loaded) {
-    return <div className="container-app py-10 text-sm text-muted-foreground">Loading business operations…</div>;
+    return (
+      <div className="container-app py-10 text-sm text-muted-foreground">
+        Loading business operations…
+      </div>
+    );
   }
   if (!isAdmin) {
     return <div className="container-app py-10 text-sm">Access denied.</div>;
@@ -465,15 +561,22 @@ function BusinessOpsPage() {
       {/* Title / Tab Header */}
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between border-b border-border pb-4">
         <div>
-          <h1 className="font-display text-2xl font-bold tracking-tight text-foreground">Business Operations Center</h1>
-          <p className="text-xs text-muted-foreground mt-0.5">Manage pipeline sales inquiries, client collections, and storefront interactive media/trust options.</p>
+          <h1 className="font-display text-2xl font-bold tracking-tight text-foreground">
+            Business Operations Center
+          </h1>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Manage pipeline sales inquiries, client collections, and storefront interactive
+            media/trust options.
+          </p>
         </div>
-        
+
         <div className="flex bg-muted/80 p-0.5 rounded-lg border border-border overflow-x-auto whitespace-nowrap scrollbar-none shrink-0 self-start lg:self-center">
           <button
             onClick={() => setActiveTab("pipeline")}
             className={`rounded-md px-3.5 py-1.5 text-xs font-semibold capitalize transition ${
-              activeTab === "pipeline" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+              activeTab === "pipeline"
+                ? "bg-card text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
             }`}
           >
             Sales Pipeline
@@ -481,7 +584,9 @@ function BusinessOpsPage() {
           <button
             onClick={() => setActiveTab("collections")}
             className={`rounded-md px-3.5 py-1.5 text-xs font-semibold capitalize transition ${
-              activeTab === "collections" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+              activeTab === "collections"
+                ? "bg-card text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
             }`}
           >
             Collections Manager
@@ -489,7 +594,9 @@ function BusinessOpsPage() {
           <button
             onClick={() => setActiveTab("experience")}
             className={`rounded-md px-3.5 py-1.5 text-xs font-semibold capitalize transition ${
-              activeTab === "experience" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+              activeTab === "experience"
+                ? "bg-card text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
             }`}
           >
             Experience Manager
@@ -497,7 +604,9 @@ function BusinessOpsPage() {
           <button
             onClick={() => setActiveTab("home_videos")}
             className={`rounded-md px-3.5 py-1.5 text-xs font-semibold capitalize transition ${
-              activeTab === "home_videos" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+              activeTab === "home_videos"
+                ? "bg-card text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
             }`}
           >
             Home Videos
@@ -520,15 +629,22 @@ function BusinessOpsPage() {
 
           {/* Kanban */}
           <section className="rounded-xl border border-border bg-card p-4">
-            <h2 className="font-display text-base font-bold tracking-tight text-foreground">Inquiry Pipeline Kanban</h2>
+            <h2 className="font-display text-base font-bold tracking-tight text-foreground">
+              Inquiry Pipeline Kanban
+            </h2>
             <div className="mt-3 grid auto-rows-fr gap-3 overflow-x-auto sm:grid-cols-2 lg:grid-cols-6 scrollbar-thin">
               {STATUSES.map((s) => {
                 const cards = inquiries.filter((i) => i.inquiry_status === s);
                 return (
-                  <div key={s} className="min-w-[190px] rounded-lg border border-border bg-surface p-2 flex flex-col">
+                  <div
+                    key={s}
+                    className="min-w-[190px] rounded-lg border border-border bg-surface p-2 flex flex-col"
+                  >
                     <div className="mb-2.5 flex items-center justify-between px-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground border-b border-border/50 pb-1">
                       <span>{s}</span>
-                      <span className="rounded-full bg-primary/10 px-1.5 text-primary text-[9px]">{cards.length}</span>
+                      <span className="rounded-full bg-primary/10 px-1.5 text-primary text-[9px]">
+                        {cards.length}
+                      </span>
                     </div>
                     <ul className="space-y-2 flex-1 overflow-y-auto">
                       {cards.map((c) => (
@@ -537,8 +653,12 @@ function BusinessOpsPage() {
                             onClick={() => setSelected(c)}
                             className="block w-full rounded-md border border-border bg-card p-2 text-left text-xs hover:border-primary transition"
                           >
-                            <div className="truncate font-semibold text-foreground">{c.customer_name || "Anonymous"}</div>
-                            <div className="truncate text-[10px] text-muted-foreground">{c.customer_email || "—"}</div>
+                            <div className="truncate font-semibold text-foreground">
+                              {c.customer_name || "Anonymous"}
+                            </div>
+                            <div className="truncate text-[10px] text-muted-foreground">
+                              {c.customer_email || "—"}
+                            </div>
                             <div className="mt-1 flex items-center justify-between text-[9px] text-muted-foreground pt-1 border-t border-border/40">
                               <span>{new Date(c.created_at).toLocaleDateString()}</span>
                               <span className="font-mono">{c.collection_id.slice(0, 5)}</span>
@@ -562,7 +682,9 @@ function BusinessOpsPage() {
 
       {activeTab === "collections" && (
         <section className="rounded-xl border border-border bg-card p-4">
-          <h2 className="font-display text-base font-bold tracking-tight text-foreground">Collection Manager</h2>
+          <h2 className="font-display text-base font-bold tracking-tight text-foreground">
+            Collection Manager
+          </h2>
           <div className="mt-3 overflow-x-auto">
             <table className="min-w-full text-xs">
               <thead className="text-left text-[10px] uppercase tracking-wider text-muted-foreground border-b border-border">
@@ -582,10 +704,18 @@ function BusinessOpsPage() {
                   const inq = inquiries.find((i) => i.collection_id === c.id);
                   return (
                     <tr key={c.id} className="hover:bg-muted/10 transition">
-                      <td className="py-2 pr-3 font-mono font-bold text-foreground">{c.id.slice(0, 8)}</td>
+                      <td className="py-2 pr-3 font-mono font-bold text-foreground">
+                        {c.id.slice(0, 8)}
+                      </td>
                       <td className="py-2 pr-3">{c.user_name || c.user_email || "—"}</td>
                       <td className="py-2 pr-3 font-semibold">{c.item_count}</td>
-                      <td className="py-2 pr-3">{c.whatsapp_sent ? <span className="text-green-500 font-bold">✓</span> : "—"}</td>
+                      <td className="py-2 pr-3">
+                        {c.whatsapp_sent ? (
+                          <span className="text-green-500 font-bold">✓</span>
+                        ) : (
+                          "—"
+                        )}
+                      </td>
                       <td className="py-2 pr-3">
                         <select
                           value={c.inquiry_status}
@@ -593,13 +723,20 @@ function BusinessOpsPage() {
                           className="rounded border border-border bg-background px-1 py-0.5 text-[11px]"
                         >
                           {STATUSES.map((s) => (
-                            <option key={s} value={s}>{s}</option>
+                            <option key={s} value={s}>
+                              {s}
+                            </option>
                           ))}
                         </select>
                       </td>
-                      <td className="py-2 pr-3 text-muted-foreground">{new Date(c.created_at).toLocaleDateString()}</td>
+                      <td className="py-2 pr-3 text-muted-foreground">
+                        {new Date(c.created_at).toLocaleDateString()}
+                      </td>
                       <td className="py-2 pr-3">
-                        <NotesCell value={c.internal_notes ?? ""} onSave={(v) => updateCollectionNotes(c.id, v)} />
+                        <NotesCell
+                          value={c.internal_notes ?? ""}
+                          onSave={(v) => updateCollectionNotes(c.id, v)}
+                        />
                       </td>
                       <td className="py-2 pr-3">
                         <div className="flex flex-wrap gap-1">
@@ -626,7 +763,12 @@ function BusinessOpsPage() {
                 })}
                 {collections.length === 0 && (
                   <tr>
-                    <td colSpan={8} className="py-8 text-center text-xs text-muted-foreground italic">No collections registered.</td>
+                    <td
+                      colSpan={8}
+                      className="py-8 text-center text-xs text-muted-foreground italic"
+                    >
+                      No collections registered.
+                    </td>
                   </tr>
                 )}
               </tbody>
@@ -641,9 +783,11 @@ function BusinessOpsPage() {
           <div className="rounded-xl border border-border bg-card p-5 space-y-4">
             <div className="flex items-center gap-1.5 border-b border-border pb-3">
               <Tv className="h-4 w-4 text-primary" />
-              <h2 className="font-display text-base font-bold text-foreground">Hero Videos Carousel Manager</h2>
+              <h2 className="font-display text-base font-bold text-foreground">
+                Hero Videos Carousel Manager
+              </h2>
             </div>
-            
+
             {/* Add video form with upload & URL support */}
             <div className="space-y-2">
               <div className="flex gap-2">
@@ -668,8 +812,10 @@ function BusinessOpsPage() {
                   onChange={async (e) => {
                     const file = e.target.files?.[0];
                     if (!file) return;
-                    
-                    const uploadToast = toast.loading("Uploading hero video (0%)...", { duration: 0 });
+
+                    const uploadToast = toast.loading("Uploading hero video (0%)...", {
+                      duration: 0,
+                    });
                     try {
                       const url = await uploadLargeMediaFileClient({
                         file,
@@ -690,19 +836,29 @@ function BusinessOpsPage() {
                   }}
                   className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                 />
-                <p className="text-xs text-muted-foreground font-medium">Drag and drop video here, or <span className="text-primary underline cursor-pointer">browse local files</span></p>
-                <p className="text-[10px] text-muted-foreground/80 mt-1">Supports MP4, WebM, MOV & high-resolution videos (large files supported).</p>
+                <p className="text-xs text-muted-foreground font-medium">
+                  Drag and drop video here, or{" "}
+                  <span className="text-primary underline cursor-pointer">browse local files</span>
+                </p>
+                <p className="text-[10px] text-muted-foreground/80 mt-1">
+                  Supports MP4, WebM, MOV & high-resolution videos (large files supported).
+                </p>
               </div>
             </div>
 
             {/* Videos List */}
             <div className="space-y-3.5 max-h-[350px] overflow-y-auto pr-1">
               {videos.map((vid, idx) => (
-                <div key={vid.id} className="rounded-lg border border-border bg-background p-3 flex gap-3 items-center text-xs justify-between group">
+                <div
+                  key={vid.id}
+                  className="rounded-lg border border-border bg-background p-3 flex gap-3 items-center text-xs justify-between group"
+                >
                   <div className="min-w-0 flex-1 space-y-1">
                     <div className="flex items-center gap-2">
                       <span className="font-semibold text-foreground">Video #{idx + 1}</span>
-                      <span className={`rounded-full px-1.5 py-0.2 text-[8px] font-bold uppercase ${vid.is_active ? "bg-green-500/10 text-green-500" : "bg-muted text-muted-foreground"}`}>
+                      <span
+                        className={`rounded-full px-1.5 py-0.2 text-[8px] font-bold uppercase ${vid.is_active ? "bg-green-500/10 text-green-500" : "bg-muted text-muted-foreground"}`}
+                      >
                         {vid.is_active ? "Active" : "Disabled"}
                       </span>
                     </div>
@@ -710,15 +866,39 @@ function BusinessOpsPage() {
                   </div>
 
                   <div className="flex items-center gap-1">
-                    <button onClick={() => reorderVideo(vid, "up")} disabled={idx === 0} className="p-1 rounded border border-border hover:bg-muted disabled:opacity-30"><ArrowUp className="h-3 w-3" /></button>
-                    <button onClick={() => reorderVideo(vid, "down")} disabled={idx === videos.length - 1} className="p-1 rounded border border-border hover:bg-muted disabled:opacity-30"><ArrowDown className="h-3 w-3" /></button>
-                    <button onClick={() => toggleHeroVideo(vid.id, vid.is_active)} className="rounded border border-border px-2 py-0.5 text-[9px] font-semibold hover:bg-muted transition">Toggle</button>
-                    <button onClick={() => deleteHeroVideo(vid.id)} className="p-1.5 rounded text-destructive hover:bg-destructive/5 transition"><Trash2 className="h-3.5 w-3.5" /></button>
+                    <button
+                      onClick={() => reorderVideo(vid, "up")}
+                      disabled={idx === 0}
+                      className="p-1 rounded border border-border hover:bg-muted disabled:opacity-30"
+                    >
+                      <ArrowUp className="h-3 w-3" />
+                    </button>
+                    <button
+                      onClick={() => reorderVideo(vid, "down")}
+                      disabled={idx === videos.length - 1}
+                      className="p-1 rounded border border-border hover:bg-muted disabled:opacity-30"
+                    >
+                      <ArrowDown className="h-3 w-3" />
+                    </button>
+                    <button
+                      onClick={() => toggleHeroVideo(vid.id, vid.is_active)}
+                      className="rounded border border-border px-2 py-0.5 text-[9px] font-semibold hover:bg-muted transition"
+                    >
+                      Toggle
+                    </button>
+                    <button
+                      onClick={() => deleteHeroVideo(vid.id)}
+                      className="p-1.5 rounded text-destructive hover:bg-destructive/5 transition"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
                   </div>
                 </div>
               ))}
               {videos.length === 0 && (
-                <div className="text-center py-10 border border-dashed border-border rounded-lg text-xs text-muted-foreground italic">No hero videos configured. Autoplay defaults will load.</div>
+                <div className="text-center py-10 border border-dashed border-border rounded-lg text-xs text-muted-foreground italic">
+                  No hero videos configured. Autoplay defaults will load.
+                </div>
               )}
             </div>
           </div>
@@ -727,7 +907,9 @@ function BusinessOpsPage() {
           <div className="rounded-xl border border-border bg-card p-5 space-y-4">
             <div className="flex items-center gap-1.5 border-b border-border pb-3">
               <Award className="h-4 w-4 text-primary" />
-              <h2 className="font-display text-base font-bold text-foreground">Trust features strip</h2>
+              <h2 className="font-display text-base font-bold text-foreground">
+                Trust features strip
+              </h2>
             </div>
 
             {/* Add feature Form */}
@@ -737,22 +919,59 @@ function BusinessOpsPage() {
                 <div className="grid gap-2 sm:grid-cols-2">
                   <label className="block text-xs">
                     <span className="text-muted-foreground">Title</span>
-                    <input value={editingTrust.title} onChange={(e) => setEditingTrust({ ...editingTrust, title: e.target.value })} className="mt-1 w-full rounded border border-border bg-background px-2.5 py-1" />
+                    <input
+                      value={editingTrust.title}
+                      onChange={(e) => setEditingTrust({ ...editingTrust, title: e.target.value })}
+                      className="mt-1 w-full rounded border border-border bg-background px-2.5 py-1"
+                    />
                   </label>
                   <label className="block text-xs">
                     <span className="text-muted-foreground">Icon Identifier</span>
-                    <select value={editingTrust.icon_name} onChange={(e) => setEditingTrust({ ...editingTrust, icon_name: e.target.value })} className="mt-1 w-full rounded border border-border bg-background px-2.5 py-1">
-                      {["Shield", "Truck", "CreditCard", "Headphones", "FileCheck", "HelpCircle"].map(i => <option key={i} value={i}>{i}</option>)}
+                    <select
+                      value={editingTrust.icon_name}
+                      onChange={(e) =>
+                        setEditingTrust({ ...editingTrust, icon_name: e.target.value })
+                      }
+                      className="mt-1 w-full rounded border border-border bg-background px-2.5 py-1"
+                    >
+                      {[
+                        "Shield",
+                        "Truck",
+                        "CreditCard",
+                        "Headphones",
+                        "FileCheck",
+                        "HelpCircle",
+                      ].map((i) => (
+                        <option key={i} value={i}>
+                          {i}
+                        </option>
+                      ))}
                     </select>
                   </label>
                 </div>
                 <label className="block text-xs">
                   <span className="text-muted-foreground">Description</span>
-                  <input value={editingTrust.description} onChange={(e) => setEditingTrust({ ...editingTrust, description: e.target.value })} className="mt-1 w-full rounded border border-border bg-background px-2.5 py-1" />
+                  <input
+                    value={editingTrust.description}
+                    onChange={(e) =>
+                      setEditingTrust({ ...editingTrust, description: e.target.value })
+                    }
+                    className="mt-1 w-full rounded border border-border bg-background px-2.5 py-1"
+                  />
                 </label>
                 <div className="flex gap-2">
-                  <button onClick={updateTrustFeature} className="rounded bg-primary px-3 py-1.5 text-xs text-primary-foreground font-semibold">Save Changes</button>
-                  <button onClick={() => setEditingTrust(null)} className="rounded border border-border px-3 py-1.5 text-xs">Cancel</button>
+                  <button
+                    onClick={updateTrustFeature}
+                    className="rounded bg-primary px-3 py-1.5 text-xs text-primary-foreground font-semibold"
+                  >
+                    Save Changes
+                  </button>
+                  <button
+                    onClick={() => setEditingTrust(null)}
+                    className="rounded border border-border px-3 py-1.5 text-xs"
+                  >
+                    Cancel
+                  </button>
                 </div>
               </div>
             ) : (
@@ -761,40 +980,96 @@ function BusinessOpsPage() {
                 <div className="grid gap-2 sm:grid-cols-2">
                   <label className="block text-[10px] text-muted-foreground">
                     Title
-                    <input value={newTrust.title} onChange={(e) => setNewTrust({ ...newTrust, title: e.target.value })} className="mt-1 w-full rounded border border-border bg-background px-2.5 py-1" />
+                    <input
+                      value={newTrust.title}
+                      onChange={(e) => setNewTrust({ ...newTrust, title: e.target.value })}
+                      className="mt-1 w-full rounded border border-border bg-background px-2.5 py-1"
+                    />
                   </label>
                   <label className="block text-[10px] text-muted-foreground">
                     Icon Name
-                    <select value={newTrust.icon_name} onChange={(e) => setNewTrust({ ...newTrust, icon_name: e.target.value })} className="mt-1 w-full rounded border border-border bg-background px-2.5 py-1">
-                      {["Shield", "Truck", "CreditCard", "Headphones", "FileCheck", "HelpCircle"].map(i => <option key={i} value={i}>{i}</option>)}
+                    <select
+                      value={newTrust.icon_name}
+                      onChange={(e) => setNewTrust({ ...newTrust, icon_name: e.target.value })}
+                      className="mt-1 w-full rounded border border-border bg-background px-2.5 py-1"
+                    >
+                      {[
+                        "Shield",
+                        "Truck",
+                        "CreditCard",
+                        "Headphones",
+                        "FileCheck",
+                        "HelpCircle",
+                      ].map((i) => (
+                        <option key={i} value={i}>
+                          {i}
+                        </option>
+                      ))}
                     </select>
                   </label>
                 </div>
                 <label className="block text-[10px] text-muted-foreground">
                   Description
-                  <input value={newTrust.description} onChange={(e) => setNewTrust({ ...newTrust, description: e.target.value })} className="mt-1 w-full rounded border border-border bg-background px-2.5 py-1" />
+                  <input
+                    value={newTrust.description}
+                    onChange={(e) => setNewTrust({ ...newTrust, description: e.target.value })}
+                    className="mt-1 w-full rounded border border-border bg-background px-2.5 py-1"
+                  />
                 </label>
-                <button disabled={busy} onClick={addTrustFeature} className="rounded bg-primary px-3 py-1.5 font-semibold text-primary-foreground">Add Feature Strip</button>
+                <button
+                  disabled={busy}
+                  onClick={addTrustFeature}
+                  className="rounded bg-primary px-3 py-1.5 font-semibold text-primary-foreground"
+                >
+                  Add Feature Strip
+                </button>
               </div>
             )}
 
             {/* Trusts List */}
             <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1">
               {trusts.map((t, idx) => (
-                <div key={t.id} className="rounded-lg border border-border bg-background p-3 flex justify-between items-center text-xs">
+                <div
+                  key={t.id}
+                  className="rounded-lg border border-border bg-background p-3 flex justify-between items-center text-xs"
+                >
                   <div>
                     <div className="font-bold text-foreground flex items-center gap-1.5">
-                      <span className="rounded bg-muted px-1.5 py-0.2 font-mono text-[9px]">{t.icon_name}</span>
+                      <span className="rounded bg-muted px-1.5 py-0.2 font-mono text-[9px]">
+                        {t.icon_name}
+                      </span>
                       {t.title}
                     </div>
                     <p className="text-[10px] text-muted-foreground mt-0.5">{t.description}</p>
                   </div>
 
                   <div className="flex items-center gap-1 shrink-0 ml-4">
-                    <button onClick={() => reorderTrust(t, "up")} disabled={idx === 0} className="p-1 rounded border border-border hover:bg-muted disabled:opacity-30"><ArrowUp className="h-3 w-3" /></button>
-                    <button onClick={() => reorderTrust(t, "down")} disabled={idx === trusts.length - 1} className="p-1 rounded border border-border hover:bg-muted disabled:opacity-30"><ArrowDown className="h-3 w-3" /></button>
-                    <button onClick={() => setEditingTrust(t)} className="p-1.5 rounded hover:bg-muted transition text-muted-foreground hover:text-foreground"><Edit className="h-3.5 w-3.5" /></button>
-                    <button onClick={() => deleteTrustFeature(t.id)} className="p-1.5 rounded text-destructive hover:bg-destructive/5 transition"><Trash2 className="h-3.5 w-3.5" /></button>
+                    <button
+                      onClick={() => reorderTrust(t, "up")}
+                      disabled={idx === 0}
+                      className="p-1 rounded border border-border hover:bg-muted disabled:opacity-30"
+                    >
+                      <ArrowUp className="h-3 w-3" />
+                    </button>
+                    <button
+                      onClick={() => reorderTrust(t, "down")}
+                      disabled={idx === trusts.length - 1}
+                      className="p-1 rounded border border-border hover:bg-muted disabled:opacity-30"
+                    >
+                      <ArrowDown className="h-3 w-3" />
+                    </button>
+                    <button
+                      onClick={() => setEditingTrust(t)}
+                      className="p-1.5 rounded hover:bg-muted transition text-muted-foreground hover:text-foreground"
+                    >
+                      <Edit className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      onClick={() => deleteTrustFeature(t.id)}
+                      className="p-1.5 rounded text-destructive hover:bg-destructive/5 transition"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
                   </div>
                 </div>
               ))}
@@ -809,23 +1084,33 @@ function BusinessOpsPage() {
             <div className="flex items-center gap-2">
               <Tv className="h-5 w-5 text-[#1E82A6]" />
               <div>
-                <h2 className="font-display text-lg font-bold text-foreground">Homepage Showcase Video Manager</h2>
-                <p className="text-xs text-muted-foreground">Upload and arrange video clips displayed in the continuous showcase slider on the homepage.</p>
+                <h2 className="font-display text-lg font-bold text-foreground">
+                  Homepage Showcase Video Manager
+                </h2>
+                <p className="text-xs text-muted-foreground">
+                  Upload and arrange video clips displayed in the continuous showcase slider on the
+                  homepage.
+                </p>
               </div>
             </div>
             <span className="rounded-full bg-[#1E82A6]/10 px-3 py-1 text-xs font-bold text-[#1E82A6] shrink-0 self-start sm:self-center">
-              {showcaseVideos.filter(v => v.is_active).length} Active Video{showcaseVideos.filter(v => v.is_active).length !== 1 ? "s" : ""}
+              {showcaseVideos.filter((v) => v.is_active).length} Active Video
+              {showcaseVideos.filter((v) => v.is_active).length !== 1 ? "s" : ""}
             </span>
           </div>
 
           <div className="grid gap-6 md:grid-cols-2">
             {/* Upload Form Box */}
             <div className="space-y-4 rounded-xl border border-border/80 bg-surface p-4">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-foreground">Add New Showcase Video</h3>
-              
+              <h3 className="text-xs font-bold uppercase tracking-wider text-foreground">
+                Add New Showcase Video
+              </h3>
+
               <div className="space-y-3">
                 <div>
-                  <label className="block text-[11px] font-semibold text-muted-foreground mb-1">Video Title / Caption (Optional)</label>
+                  <label className="block text-[11px] font-semibold text-muted-foreground mb-1">
+                    Video Title / Caption (Optional)
+                  </label>
                   <input
                     value={newShowcaseTitle}
                     onChange={(e) => setNewShowcaseTitle(e.target.value)}
@@ -835,7 +1120,9 @@ function BusinessOpsPage() {
                 </div>
 
                 <div>
-                  <label className="block text-[11px] font-semibold text-muted-foreground mb-1">Video URL or Direct File Upload</label>
+                  <label className="block text-[11px] font-semibold text-muted-foreground mb-1">
+                    Video URL or Direct File Upload
+                  </label>
                   <div className="flex gap-2">
                     <input
                       value={newShowcaseUrl}
@@ -861,7 +1148,9 @@ function BusinessOpsPage() {
                       const file = e.target.files?.[0];
                       if (!file) return;
 
-                      const uploadToast = toast.loading("Uploading showcase video (0%)...", { duration: 0 });
+                      const uploadToast = toast.loading("Uploading showcase video (0%)...", {
+                        duration: 0,
+                      });
                       try {
                         const url = await uploadLargeMediaFileClient({
                           file,
@@ -869,7 +1158,9 @@ function BusinessOpsPage() {
                           resourceType: "video",
                           getSignatureFn,
                           onProgress: (pct) => {
-                            toast.loading(`Uploading showcase video (${pct}%)...`, { id: uploadToast });
+                            toast.loading(`Uploading showcase video (${pct}%)...`, {
+                              id: uploadToast,
+                            });
                           },
                         });
                         setNewShowcaseUrl(url);
@@ -883,41 +1174,88 @@ function BusinessOpsPage() {
                     className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                   />
                   <Tv className="mx-auto h-8 w-8 text-muted-foreground/60 mb-2" />
-                  <p className="text-xs font-bold text-foreground">Drag and drop video file here, or <span className="text-[#1E82A6] underline cursor-pointer">browse local files</span></p>
-                  <p className="text-[10px] text-muted-foreground mt-1">Supports MP4, WebM, MOV & high-definition video files (large files supported directly).</p>
+                  <p className="text-xs font-bold text-foreground">
+                    Drag and drop video file here, or{" "}
+                    <span className="text-[#1E82A6] underline cursor-pointer">
+                      browse local files
+                    </span>
+                  </p>
+                  <p className="text-[10px] text-muted-foreground mt-1">
+                    Supports MP4, WebM, MOV & high-definition video files (large files supported
+                    directly).
+                  </p>
                 </div>
               </div>
             </div>
 
             {/* Videos Playlist List */}
             <div className="space-y-3 max-h-[450px] overflow-y-auto pr-1">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-foreground">Showcase Playlist ({showcaseVideos.length})</h3>
-              
+              <h3 className="text-xs font-bold uppercase tracking-wider text-foreground">
+                Showcase Playlist ({showcaseVideos.length})
+              </h3>
+
               {showcaseVideos.map((vid, idx) => (
-                <div key={vid.id} className="rounded-xl border border-border bg-background p-3.5 flex gap-3 items-center justify-between shadow-2xs group">
+                <div
+                  key={vid.id}
+                  className="rounded-xl border border-border bg-background p-3.5 flex gap-3 items-center justify-between shadow-2xs group"
+                >
                   <div className="min-w-0 flex-1 space-y-1">
                     <div className="flex items-center gap-2">
                       <span className="font-bold text-xs text-foreground">Showcase #{idx + 1}</span>
-                      {vid.title && <span className="text-xs font-medium text-muted-foreground truncate">— {vid.title}</span>}
-                      <span className={`rounded-full px-2 py-0.5 text-[9px] font-extrabold uppercase ${vid.is_active ? "bg-green-500/10 text-green-600" : "bg-muted text-muted-foreground"}`}>
+                      {vid.title && (
+                        <span className="text-xs font-medium text-muted-foreground truncate">
+                          — {vid.title}
+                        </span>
+                      )}
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[9px] font-extrabold uppercase ${vid.is_active ? "bg-green-500/10 text-green-600" : "bg-muted text-muted-foreground"}`}
+                      >
                         {vid.is_active ? "Active" : "Disabled"}
                       </span>
                     </div>
-                    <p className="text-[10px] font-mono text-muted-foreground truncate">{vid.url}</p>
+                    <p className="text-[10px] font-mono text-muted-foreground truncate">
+                      {vid.url}
+                    </p>
                   </div>
 
                   <div className="flex items-center gap-1 shrink-0">
-                    <button onClick={() => reorderShowcaseVideo(vid, "up")} disabled={idx === 0} className="p-1.5 rounded border border-border hover:bg-muted disabled:opacity-30" title="Move Up"><ArrowUp className="h-3.5 w-3.5" /></button>
-                    <button onClick={() => reorderShowcaseVideo(vid, "down")} disabled={idx === showcaseVideos.length - 1} className="p-1.5 rounded border border-border hover:bg-muted disabled:opacity-30" title="Move Down"><ArrowDown className="h-3.5 w-3.5" /></button>
-                    <button onClick={() => toggleShowcaseVideo(vid.id, vid.is_active)} className="rounded border border-border px-2.5 py-1 text-[10px] font-bold hover:bg-muted transition">Toggle</button>
-                    <button onClick={() => deleteShowcaseVideo(vid.id)} className="p-1.5 rounded text-destructive hover:bg-destructive/10 transition" title="Delete"><Trash2 className="h-4 w-4" /></button>
+                    <button
+                      onClick={() => reorderShowcaseVideo(vid, "up")}
+                      disabled={idx === 0}
+                      className="p-1.5 rounded border border-border hover:bg-muted disabled:opacity-30"
+                      title="Move Up"
+                    >
+                      <ArrowUp className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      onClick={() => reorderShowcaseVideo(vid, "down")}
+                      disabled={idx === showcaseVideos.length - 1}
+                      className="p-1.5 rounded border border-border hover:bg-muted disabled:opacity-30"
+                      title="Move Down"
+                    >
+                      <ArrowDown className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      onClick={() => toggleShowcaseVideo(vid.id, vid.is_active)}
+                      className="rounded border border-border px-2.5 py-1 text-[10px] font-bold hover:bg-muted transition"
+                    >
+                      Toggle
+                    </button>
+                    <button
+                      onClick={() => deleteShowcaseVideo(vid.id)}
+                      className="p-1.5 rounded text-destructive hover:bg-destructive/10 transition"
+                      title="Delete"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
                   </div>
                 </div>
               ))}
 
               {showcaseVideos.length === 0 && (
                 <div className="text-center py-12 border border-dashed border-border rounded-xl text-xs text-muted-foreground italic">
-                  No custom showcase videos added yet. Default architectural showcase videos will play on the homepage slider.
+                  No custom showcase videos added yet. Default architectural showcase videos will
+                  play on the homepage slider.
                 </div>
               )}
             </div>
@@ -938,7 +1276,15 @@ function BusinessOpsPage() {
   );
 }
 
-function Metric({ icon: Icon, label, value }: { icon: typeof Inbox; label: string; value: number }) {
+function Metric({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: typeof Inbox;
+  label: string;
+  value: number;
+}) {
   return (
     <div className="rounded-xl border border-border bg-card p-3">
       <div className="flex items-center gap-2 text-[10px] uppercase tracking-wider text-muted-foreground">
@@ -961,7 +1307,10 @@ function NotesCell({ value, onSave }: { value: string; onSave: (v: string) => vo
         className="w-32 rounded border border-border bg-background px-1 py-0.5 text-[11px]"
       />
       {v !== value && (
-        <button onClick={() => onSave(v)} className="rounded bg-primary px-1.5 py-0.5 text-[10px] text-primary-foreground font-semibold">
+        <button
+          onClick={() => onSave(v)}
+          className="rounded bg-primary px-1.5 py-0.5 text-[10px] text-primary-foreground font-semibold"
+        >
           Save
         </button>
       )}
@@ -984,7 +1333,9 @@ function InquiryDrawer({
 }) {
   const [notes, setNotes] = useState(inquiry.internal_notes ?? "");
   const [collection, setCollection] = useState<{ id: string; created_at: string } | null>(null);
-  const [products, setProducts] = useState<Array<{ id: string; name: string; code: string; image_url: string | null }>>([]);
+  const [products, setProducts] = useState<
+    Array<{ id: string; name: string; code: string; image_url: string | null }>
+  >([]);
 
   useEffect(() => setNotes(inquiry.internal_notes ?? ""), [inquiry.id, inquiry.internal_notes]);
 
@@ -1006,7 +1357,14 @@ function InquiryDrawer({
         .from("products")
         .select("id,name,code,image_url")
         .in("id", ids);
-      setProducts((prods ?? []) as Array<{ id: string; name: string; code: string; image_url: string | null }>);
+      setProducts(
+        (prods ?? []) as Array<{
+          id: string;
+          name: string;
+          code: string;
+          image_url: string | null;
+        }>,
+      );
     })();
   }, [inquiry.collection_id]);
 
@@ -1016,7 +1374,9 @@ function InquiryDrawer({
       <aside className="flex h-full w-full max-w-md flex-col overflow-y-auto border-l border-border bg-background">
         <div className="sticky top-0 flex items-center justify-between border-b border-border bg-background px-4 py-3">
           <h3 className="font-display text-lg font-semibold">Inquiry Details</h3>
-          <button onClick={onClose} className="rounded-md p-1 hover:bg-surface-2"><X className="h-4 w-4" /></button>
+          <button onClick={onClose} className="rounded-md p-1 hover:bg-surface-2">
+            <X className="h-4 w-4" />
+          </button>
         </div>
         <div className="space-y-5 p-4 text-sm">
           <Section title="Customer Information">
@@ -1031,7 +1391,9 @@ function InquiryDrawer({
             <Row label="Total Products" value={String(products.length)} />
             <Row
               label="Created"
-              value={collection?.created_at ? new Date(collection.created_at).toLocaleString() : "—"}
+              value={
+                collection?.created_at ? new Date(collection.created_at).toLocaleString() : "—"
+              }
             />
           </Section>
 
@@ -1041,11 +1403,20 @@ function InquiryDrawer({
             ) : (
               <ul className="grid grid-cols-3 gap-2">
                 {products.map((p) => (
-                  <li key={p.id} className="overflow-hidden rounded-md border border-border bg-card">
+                  <li
+                    key={p.id}
+                    className="overflow-hidden rounded-md border border-border bg-card"
+                  >
                     {publicImageUrl(p.image_url) ? (
-                      <img src={publicImageUrl(p.image_url)!} alt="" className="aspect-square w-full object-cover" />
+                      <img
+                        src={publicImageUrl(p.image_url)!}
+                        alt=""
+                        className="aspect-square w-full object-cover"
+                      />
                     ) : (
-                      <div className="aspect-square w-full bg-muted flex items-center justify-center text-[10px] text-muted-foreground">No image</div>
+                      <div className="aspect-square w-full bg-muted flex items-center justify-center text-[10px] text-muted-foreground">
+                        No image
+                      </div>
                     )}
                     <div className="p-1 text-[10px]">
                       <div className="truncate font-semibold">{p.name}</div>
@@ -1110,7 +1481,15 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-function Row({ label, value, mono }: { label: string; value: string | null | undefined; mono?: boolean }) {
+function Row({
+  label,
+  value,
+  mono,
+}: {
+  label: string;
+  value: string | null | undefined;
+  mono?: boolean;
+}) {
   return (
     <div className="flex justify-between py-1 border-b border-border/40 text-xs">
       <span className="text-muted-foreground">{label}</span>

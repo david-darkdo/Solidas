@@ -4,10 +4,10 @@ import { getAIProvider, AIProviderError } from "./ai-providers";
 
 /**
  * Standalone Independent Lifestyle Image Generation Module (BUILD G)
- * 
+ *
  * Generates an installed/lifestyle product image from the original manufacturer product image
  * and the Universal Lifestyle Prompt template configured in the AI Control Center.
- * 
+ *
  * Strictly isolated: Does NOT invoke Product Understanding, SEO, Search, Recommendation, or Quality Validation.
  * Updates ONLY products.generated_installed_image and inserts a record into product_assets.
  */
@@ -34,7 +34,11 @@ export const generateStandaloneLifestyleImage = createServerFn({ method: "POST" 
     }
 
     // Guard 1: Require Original Product Image
-    if (!product.image_url || typeof product.image_url !== "string" || product.image_url.trim() === "") {
+    if (
+      !product.image_url ||
+      typeof product.image_url !== "string" ||
+      product.image_url.trim() === ""
+    ) {
       throw new Error("Original product image is required before generating an installed image.");
     }
 
@@ -49,7 +53,9 @@ export const generateStandaloneLifestyleImage = createServerFn({ method: "POST" 
     const rawTemplateText = template?.prompt_text;
     // Guard 2: Require Active Lifestyle Template
     if (!rawTemplateText || rawTemplateText.trim() === "") {
-      throw new Error("Lifestyle template is missing. Please configure it in the AI Control Center.");
+      throw new Error(
+        "Lifestyle template is missing. Please configure it in the AI Control Center.",
+      );
     }
 
     // Check optional Family Group override
@@ -72,10 +78,22 @@ export const generateStandaloneLifestyleImage = createServerFn({ method: "POST" 
     let familyName = "";
 
     const [typeRes, catRes, subRes, famRes] = await Promise.all([
-      product.type_id ? supabase.from("product_types").select("name").eq("id", product.type_id).maybeSingle() : Promise.resolve({ data: null }),
-      product.category_id ? supabase.from("categories").select("name").eq("id", product.category_id).maybeSingle() : Promise.resolve({ data: null }),
-      product.subcategory_id ? supabase.from("subcategories").select("name").eq("id", product.subcategory_id).maybeSingle() : Promise.resolve({ data: null }),
-      product.family_id ? supabase.from("family_groups").select("name").eq("id", product.family_id).maybeSingle() : Promise.resolve({ data: null }),
+      product.type_id
+        ? supabase.from("product_types").select("name").eq("id", product.type_id).maybeSingle()
+        : Promise.resolve({ data: null }),
+      product.category_id
+        ? supabase.from("categories").select("name").eq("id", product.category_id).maybeSingle()
+        : Promise.resolve({ data: null }),
+      product.subcategory_id
+        ? supabase
+            .from("subcategories")
+            .select("name")
+            .eq("id", product.subcategory_id)
+            .maybeSingle()
+        : Promise.resolve({ data: null }),
+      product.family_id
+        ? supabase.from("family_groups").select("name").eq("id", product.family_id).maybeSingle()
+        : Promise.resolve({ data: null }),
     ]);
 
     if (typeRes.data?.name) typeName = typeRes.data.name;
@@ -104,16 +122,22 @@ export const generateStandaloneLifestyleImage = createServerFn({ method: "POST" 
     }
 
     // 4. Retrieve Active Provider Configuration
-    const { data: settings } = await supabase.from("app_settings").select("*").limit(1).maybeSingle();
-    const config = settings ? {
-      activeProvider: settings.active_ai_provider || "openai",
-      openaiLlmModel: settings.openai_llm_model,
-      openaiImageModel: settings.openai_image_model,
-      openaiImageSize: settings.openai_image_size || "1024x1024",
-      geminiLlmModel: settings.gemini_llm_model,
-      geminiImageModel: settings.gemini_image_model,
-      geminiUseVertex: settings.gemini_use_vertex ?? false
-    } : undefined;
+    const { data: settings } = await supabase
+      .from("app_settings")
+      .select("*")
+      .limit(1)
+      .maybeSingle();
+    const config = settings
+      ? {
+          activeProvider: settings.active_ai_provider || "openai",
+          openaiLlmModel: settings.openai_llm_model,
+          openaiImageModel: settings.openai_image_model,
+          openaiImageSize: settings.openai_image_size || "1024x1024",
+          geminiLlmModel: settings.gemini_llm_model,
+          geminiImageModel: settings.gemini_image_model,
+          geminiUseVertex: settings.gemini_use_vertex ?? false,
+        }
+      : undefined;
 
     const provider = getAIProvider(config as any);
 
@@ -126,7 +150,10 @@ export const generateStandaloneLifestyleImage = createServerFn({ method: "POST" 
         origBuffer = Buffer.from(arrBuf);
       }
     } catch (fetchErr) {
-      console.warn("Could not fetch raw original image buffer, proceeding with prompt generation:", fetchErr);
+      console.warn(
+        "Could not fetch raw original image buffer, proceeding with prompt generation:",
+        fetchErr,
+      );
     }
 
     // 6. Call Image Generation API
@@ -149,30 +176,24 @@ export const generateStandaloneLifestyleImage = createServerFn({ method: "POST" 
             message: genErr.message || String(genErr),
             provider: provider.name,
             prompt,
-          }
+          },
         });
       } catch {}
       throw new Error(`Lifestyle image generation failed: ${genErr.message || String(genErr)}`);
     }
 
     // 7. Upload Generated Image to Cloudinary
-    const cloudName = process.env.CLOUDINARY_CLOUD_NAME || process.env.VITE_CLOUDINARY_CLOUD_NAME;
-    const apiKey = process.env.CLOUDINARY_API_KEY;
-    const apiSecret = process.env.CLOUDINARY_API_SECRET;
+    const { getServerCloudinaryConfig, createCloudinarySignature } =
+      await import("./cloudinary.server");
+    const { cloudName, apiKey, apiSecret } = getServerCloudinaryConfig();
 
     if (!cloudName || !apiKey || !apiSecret) {
       throw new Error("Missing Cloudinary environment configuration on server.");
     }
 
-    const crypto = await import("crypto");
     const timestamp = Math.round(Date.now() / 1000);
     const folder = `products/${productId}`;
-
-    const paramString = `folder=${folder}&timestamp=${timestamp}`;
-    const signature = crypto
-      .createHash("sha1")
-      .update(paramString + apiSecret)
-      .digest("hex");
+    const signature = await createCloudinarySignature({ folder, timestamp }, apiSecret);
 
     const formData = new URLSearchParams();
     formData.append("file", `data:image/png;base64,${installedBuf.toString("base64")}`);
@@ -199,7 +220,8 @@ export const generateStandaloneLifestyleImage = createServerFn({ method: "POST" 
     const nextVersion = (product.generation_version ?? 0) + 1;
 
     // Demote existing primary AI assets
-    await supabaseAdmin.from("product_assets")
+    await supabaseAdmin
+      .from("product_assets")
       .update({ is_primary: false })
       .eq("product_id", productId)
       .eq("generated_by_ai", true);
@@ -218,11 +240,14 @@ export const generateStandaloneLifestyleImage = createServerFn({ method: "POST" 
     ]);
 
     // Update ONLY generated_installed_image column on products table
-    await supabase.from("products").update({
-      generated_installed_image: installedUrl,
-      generation_version: nextVersion,
-      last_processed_at: new Date().toISOString(),
-    } as any).eq("id", productId);
+    await supabase
+      .from("products")
+      .update({
+        generated_installed_image: installedUrl,
+        generation_version: nextVersion,
+        last_processed_at: new Date().toISOString(),
+      } as any)
+      .eq("id", productId);
 
     const executionMs = Date.now() - started;
 

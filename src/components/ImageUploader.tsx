@@ -2,8 +2,18 @@ import { useRef, useState, useCallback } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { UploadCloud, Loader2, X, Star, Download, RefreshCw, Crop, AlertCircle } from "lucide-react";
-import { getCloudinarySignatureServer, uploadLargeMediaFileClient, formatCloudinaryUrl } from "@/lib/upload-server";
+import {
+  UploadCloud,
+  Loader2,
+  X,
+  Star,
+  Download,
+  RefreshCw,
+  Crop,
+  AlertCircle,
+} from "lucide-react";
+import { getCloudinarySignatureServer } from "@/lib/upload-server";
+import { uploadLargeMediaFileClient, formatCloudinaryUrl } from "@/lib/upload-client";
 
 export function publicImageUrl(path: string | null | undefined): string | null {
   if (!path) return null;
@@ -45,7 +55,9 @@ async function normalizeFileForUpload(file: File): Promise<File> {
       const ctx = canvas.getContext("2d");
       if (ctx) {
         ctx.drawImage(bitmap, 0, 0, width, height);
-        const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.92));
+        const blob = await new Promise<Blob | null>((resolve) =>
+          canvas.toBlob(resolve, "image/jpeg", 0.92),
+        );
         if (blob) {
           const cleanName = file.name.replace(/\.[^/.]+$/, "") + ".jpg";
           return new File([blob], cleanName, { type: "image/jpeg" });
@@ -86,7 +98,10 @@ export function ImageUploader({
   const handleFiles = useCallback(
     async (files: FileList | File[]) => {
       const list = Array.from(files).filter(
-        (f) => !f.type || f.type.startsWith("image/") || /\.(jpg|jpeg|png|webp|heic|heif)$/i.test(f.name)
+        (f) =>
+          !f.type ||
+          f.type.startsWith("image/") ||
+          /\.(jpg|jpeg|png|webp|heic|heif)$/i.test(f.name),
       );
       if (list.length === 0) return;
       setBusy(true);
@@ -129,7 +144,10 @@ export function ImageUploader({
 
   return (
     <div
-      onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+      onDragOver={(e) => {
+        e.preventDefault();
+        setDragging(true);
+      }}
       onDragLeave={() => setDragging(false)}
       onDrop={(e) => {
         e.preventDefault();
@@ -146,10 +164,8 @@ export function ImageUploader({
         ) : (
           <UploadCloud className="h-6 w-6 text-muted-foreground" />
         )}
-        <div className="text-sm font-medium">{busy ? (statusText || "Uploading…") : label}</div>
-        <div className="text-xs text-muted-foreground">
-          Drag & drop, or use the buttons below
-        </div>
+        <div className="text-sm font-medium">{busy ? statusText || "Uploading…" : label}</div>
+        <div className="text-xs text-muted-foreground">Drag & drop, or use the buttons below</div>
         <div className="mt-1 flex flex-wrap justify-center gap-2">
           <button
             type="button"
@@ -218,7 +234,9 @@ export function ImageTile({
         <div className="aspect-square w-full flex flex-col items-center justify-center p-4 bg-muted/30 text-center space-y-2">
           <AlertCircle className="h-6 w-6 text-amber-500" />
           <span className="text-xs font-semibold text-foreground">Image Decode Failure</span>
-          <p className="text-[10px] text-muted-foreground">The image format or network request was interrupted.</p>
+          <p className="text-[10px] text-muted-foreground">
+            The image format or network request was interrupted.
+          </p>
           {onReplace && (
             <button
               type="button"
@@ -260,25 +278,51 @@ export function ImageTile({
           </button>
         )}
         {onSetPrimary && !isPrimary && (
-          <button type="button" onClick={onSetPrimary} className="rounded border border-border px-1.5 py-1 text-[10px] hover:border-primary">
+          <button
+            type="button"
+            onClick={onSetPrimary}
+            className="rounded border border-border px-1.5 py-1 text-[10px] hover:border-primary"
+          >
             <Star className="h-3 w-3" />
           </button>
         )}
         {onReplace && (
-          <button type="button" onClick={onReplace} className="rounded border border-border px-1.5 py-1 text-[10px] hover:border-primary" title="Replace">
+          <button
+            type="button"
+            onClick={onReplace}
+            className="rounded border border-border px-1.5 py-1 text-[10px] hover:border-primary"
+            title="Replace"
+          >
             <RefreshCw className="h-3 w-3" />
           </button>
         )}
-        <a href={formattedUrl} download target="_blank" rel="noreferrer" className="rounded border border-border px-1.5 py-1 text-[10px] hover:border-primary" title="Download">
+        <a
+          href={formattedUrl}
+          download
+          target="_blank"
+          rel="noreferrer"
+          className="rounded border border-border px-1.5 py-1 text-[10px] hover:border-primary"
+          title="Download"
+        >
           <Download className="h-3 w-3" />
         </a>
         {onRegenerate && (
-          <button type="button" onClick={onRegenerate} className="rounded border border-primary/40 px-1.5 py-1 text-[10px] text-primary hover:bg-primary/10" title="Regenerate">
+          <button
+            type="button"
+            onClick={onRegenerate}
+            className="rounded border border-primary/40 px-1.5 py-1 text-[10px] text-primary hover:bg-primary/10"
+            title="Regenerate"
+          >
             <RefreshCw className="h-3 w-3" />
           </button>
         )}
         {onDelete && (
-          <button type="button" onClick={onDelete} className="ml-auto rounded border border-destructive/40 px-1.5 py-1 text-[10px] text-destructive hover:bg-destructive/10" title="Delete">
+          <button
+            type="button"
+            onClick={onDelete}
+            className="ml-auto rounded border border-destructive/40 px-1.5 py-1 text-[10px] text-destructive hover:bg-destructive/10"
+            title="Delete"
+          >
             <X className="h-3 w-3" />
           </button>
         )}

@@ -1,0 +1,36 @@
+title = "Solidas Secret Scanning Rules"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "cloudinary-url"
+description = "Cloudinary connection URL containing API key and secret"
+regex = '''cloudinary://[0-9]{10,20}:[A-Za-z0-9_-]{16,}@[a-z0-9_-]+'''
+tags = ["key", "cloudinary"]
+
+[[rules]]
+id = "cloudinary-hardcoded-api-secret"
+description = "Hardcoded Cloudinary API secret assignment or fallback"
+regex = '''CLOUDINARY_API_SECRET\s*(?:=|\|\|)\s*["'][A-Za-z0-9_-]{16,}["']'''
+tags = ["secret", "cloudinary"]
+
+[[rules]]
+id = "cloudinary-hardcoded-api-key"
+description = "Hardcoded Cloudinary API key assignment or fallback"
+regex = '''CLOUDINARY_API_KEY\s*(?:=|\|\|)\s*["'][0-9]{10,20}["']'''
+tags = ["key", "cloudinary"]
+
+[[rules]]
+id = "vite-exposed-private-secret"
+description = "Private API secret referenced via client-exposed VITE_ prefix"
+regex = '''(?:process\.env|import\.meta\.env)\.VITE_(?:CLOUDINARY_API_SECRET|CLOUDINARY_API_KEY|SUPABASE_SERVICE_ROLE_KEY)'''
+tags = ["secret", "vite"]
+
+[allowlist]
+description = "Ignore example placeholders and scanner rule definitions"
+paths = [
+  '''^\.env\.example$''',
+  '''^\.gitleaks\.toml$''',
+  '''^scripts/check-secrets\.mjs$''',
+]
